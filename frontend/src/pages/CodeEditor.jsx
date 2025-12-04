@@ -8,14 +8,53 @@ import {
 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python'; // Added Python support for demo
+import { python } from '@codemirror/lang-python';
 import { EditorView } from '@codemirror/view';
 import { io } from 'socket.io-client'; 
+import { useParams } from 'react-router-dom';
+import axios from 'axios';
+// --- CONFIG ---
+const API_URL = 'http://localhost:4000/api';
+const SOCKET_URL = 'http://localhost:4000';
 
-// --- SOCKET SETUP ---
-const socket = io('http://localhost:4000'); 
+// --- HELPER: API FETCH ---
+const api = axios.create({
+  baseURL: API_URL,
+});
 
-// Custom GitHub Dark Theme Definition
+// Automatically attach token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    console.log("TOKEN SENT:", token);
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Main API call
+const apiCall = async (endpoint, method = "GET", body = null) => {
+  try {
+    const res = await api({
+      url: endpoint,
+      method,
+      data: body,
+    });
+
+    return res.data; // Axios already parses JSON
+  } catch (err) {
+    console.log("AXIOS ERROR RESPONSE:", err.response?.data);
+
+    throw new Error(
+      err.response?.data?.message ||
+      err.response?.data?.error ||
+      err.message ||
+      "API error"
+    );
+  }
+};
+
+// --- THEME DEFINITION ---
 const githubDarkTheme = EditorView.theme({
   "&": { color: "#c9d1d9", backgroundColor: "#0d1117" },
   ".cm-content": { caretColor: "#c9d1d9" },
@@ -26,6 +65,9 @@ const githubDarkTheme = EditorView.theme({
 }, { dark: true });
 
 export default function CodeEditor() {
+  const { projectId } = useParams(); 
+  const PROJECT_ID = projectId; // Uses URL param
+
   const [darkMode, setDarkMode] = useState(true);
   
   // -- Identity State --
@@ -33,74 +75,41 @@ export default function CodeEditor() {
     name: "User_" + Math.floor(Math.random() * 1000),
     color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
   });
-  const roomId = "project-1"; 
 
-  // -- UPDATED: File System State --
-  // We now have a 'project' folder for multi-file demo and 'scripts' for single file demo
-  const [files, setFiles] = useState([
-    { id: '1', name: 'project', type: 'folder', isOpen: true, children: [
-      { id: '2', name: 'main.js', type: 'file', lang: 'javascript', content: `// Multi-File Project Example
-// Try "Run Project" to see this work!
-
-const { add, subtract } = require('./utils');
-
-console.log("--- Starting Project Execution ---");
-console.log("Calculations from utils.js:");
-console.log("5 + 10 =", add(5, 10));
-console.log("20 - 8 =", subtract(20, 8));
-console.log("--- End of Execution ---");` },
-      { id: '3', name: 'utils.js', type: 'file', lang: 'javascript', content: `// Module exporting functions
-
-function add(a, b) {
-  return a + b;
-}
-
-function subtract(a, b) {
-  return a - b;
-}
-
-module.exports = { add, subtract };` }
-    ]},
-    { id: '4', name: 'scripts', type: 'folder', isOpen: true, children: [
-      { id: '5', name: 'hello.py', type: 'file', lang: 'python', content: `# Single File Python Example
-# Try "Run File" to see this work!
-
-import time
-
-print("Hello from Python!")
-print("Counting down...")
-
-for i in range(5, 0, -1):
-    print(f"Tick: {i}")
-
-print("Blast off! 🚀")` },
-      { id: '6', name: 'simple.js', type: 'file', lang: 'javascript', content: `// Simple JS Test
-const greeting = "Hello World";
-console.log(greeting.toUpperCase());` }
-    ]}
-  ]);
+  // -- File System State --
+  const [files, setFiles] = useState([]); 
+  const [loading, setLoading] = useState(true);
 
   // -- Navigation State --
-  const [activeFileId, setActiveFileId] = useState('2'); // Default to main.js
-  const [openFiles, setOpenFiles] = useState(['2', '3', '5']);
-  const [selectedId, setSelectedId] = useState('2');
+  const [activeFileId, setActiveFileId] = useState(null);
+  const [openFiles, setOpenFiles] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
   const [sidebarView, setSidebarView] = useState('explorer'); 
   const [editingId, setEditingId] = useState(null);
+  const [creatingType, setCreatingType] = useState(null); 
 
   // -- Terminal / Execution State --
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalOutput, setTerminalOutput] = useState([
     { type: 'info', content: 'SyncCode Terminal v1.0.0' },
-    { type: 'info', content: 'Ready.' }
+    { type: 'info', content: 'Connecting to server...' }
   ]);
   const [isRunning, setIsRunning] = useState(false);
 
   // -- Collaboration State --
   const [collaborators, setCollaborators] = useState([]);
-  const [pendingInvites, setPendingInvites] = useState([
-    { id: '999', name: 'Jane Doe', email: 'jane@example.com', color: '#ff5733' }
-  ]);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  
+  // -- Invite Modal State (UPDATED) --
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('viewer'); // Default is 'viewer'
+  const [isInviting, setIsInviting] = useState(false);
+
+  // -- Socket Ref --
+  const socketRef = useRef(null);
+  // -- Save Timeout Ref (Debounce) --
+  const saveTimeoutRef = useRef(null);
 
   // Theme configuration
   const theme = {
@@ -131,11 +140,22 @@ console.log(greeting.toUpperCase());` }
     return null;
   };
 
+  const findParentId = (list, childId, parentId = null) => {
+    for (const item of list) {
+      if (item.id === childId) return parentId;
+      if (item.children) {
+        const found = findParentId(item.children, childId, item.id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
   const getAllFiles = (list, path = "") => {
     let map = {};
     list.forEach(item => {
       if (item.type === 'file') {
-        map[path + item.name] = item.content;
+        map[path + item.name] = item.content || "";
       } else if (item.children) {
         const childMap = getAllFiles(item.children, path + item.name + "/");
         Object.assign(map, childMap);
@@ -147,13 +167,48 @@ console.log(greeting.toUpperCase());` }
   const activeFile = findFileById(files, activeFileId);
 
   // --------------------------------------------------------------------------
-  // SOCKET.IO REAL-TIME LOGIC
+  // INITIAL LOAD & SOCKET SETUP
   // --------------------------------------------------------------------------
   useEffect(() => {
-    socket.emit('join-room', { 
-      roomId, 
-      userName: currentUser.name, 
-      color: currentUser.color 
+    const init = async () => {
+      try {
+        // 1. Load Files
+        const fileTree = await apiCall(`/projects/${PROJECT_ID}/files`);
+        setFiles(fileTree);
+        setLoading(false);
+        setTerminalOutput(prev => [...prev, { type: 'success', content: 'Project loaded.' }]);
+
+        // 2. Load Project Details (for pending invites)
+        const project = await apiCall(`/projects/${PROJECT_ID}`);
+        if(project.invitations) {
+            // Map invitations to UI format
+            setPendingInvites(project.invitations.map((inv, idx) => ({
+                id: idx, // or unique ID if DB provides
+                email: inv.email,
+                name: inv.email.split('@')[0],
+                role: inv.role
+            })));
+        }
+
+      } catch (err) {
+        console.error("Failed to load project", err);
+        setTerminalOutput(prev => [...prev, { type: 'error', content: `Load Failed: ${err.message}` }]);
+      }
+    };
+
+    init();
+
+    // 3. Socket Connection
+    socketRef.current = io(SOCKET_URL);
+    const socket = socketRef.current;
+
+    socket.on('connect', () => {
+       console.log("Socket connected");
+       socket.emit('join-room', { 
+         roomId: PROJECT_ID, 
+         userName: currentUser.name, 
+         color: currentUser.color 
+       });
     });
 
     socket.on('code-update', ({ fileId, code }) => {
@@ -178,7 +233,7 @@ console.log(greeting.toUpperCase());` }
         if (prev.find(c => c.id === user.id)) return prev;
         return [...prev, { ...user, fileId: null }]; 
       });
-      setTerminalOutput(prev => [...prev, { type: 'info', content: `> ${user.name} joined the session.` }]);
+      setTerminalOutput(prev => [...prev, { type: 'info', content: `> ${user.name} joined.` }]);
     });
 
     socket.on('sync-users', (users) => {
@@ -191,21 +246,15 @@ console.log(greeting.toUpperCase());` }
     });
 
     return () => {
-      socket.off('code-update');
-      socket.off('cursor-update');
-      socket.off('user-joined');
-      socket.off('sync-users');
-      socket.off('user-left');
+      socket.disconnect();
     };
-  }, [currentUser]); 
-
+  }, [currentUser, PROJECT_ID]); 
 
   // --------------------------------------------------------------------------
-  // EXECUTION LOGIC 1: RUN SINGLE FILE (API)
+  // EXECUTION LOGIC
   // --------------------------------------------------------------------------
   const runCode = async () => {
     if (!activeFile) return;
-    
     setIsRunning(true);
     setShowTerminal(true);
     setTerminalOutput(prev => [...prev, { type: 'info', content: `> Run File: ${activeFile.name}...` }]);
@@ -225,65 +274,35 @@ console.log(greeting.toUpperCase());` }
     }
 
     try {
-      const response = await fetch('http://localhost:4000/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await apiCall('/compiler/run', 'POST', {
           script: activeFile.content,
           language: language,
           versionIndex: "0"
-        })
       });
-
-      if (!response.ok) throw new Error(`Server Error: ${response.status}`);
-
-      const data = await response.json();
       
       if (data.output) {
          setTerminalOutput(prev => [...prev, { type: 'success', content: data.output }]);
-      } else if (data.error) {
-         setTerminalOutput(prev => [...prev, { type: 'error', content: `Error: ${data.error}` }]);
       } else {
-         setTerminalOutput(prev => [...prev, { type: 'info', content: 'Execution finished (No Output).' }]);
+         setTerminalOutput(prev => [...prev, { type: 'info', content: 'Execution finished.' }]);
       }
     } catch (error) {
-       console.error(error);
-       setTerminalOutput(prev => [
-         ...prev, 
-         { type: 'error', content: 'Failed to connect to backend compiler.' }
-       ]);
+       setTerminalOutput(prev => [...prev, { type: 'error', content: `Error: ${error.message}` }]);
     }
-
     setIsRunning(false);
   };
 
-  // --------------------------------------------------------------------------
-  // EXECUTION LOGIC 2: RUN PROJECT (LOCAL)
-  // --------------------------------------------------------------------------
   const runProject = async () => {
     setIsRunning(true);
     setShowTerminal(true);
-    setTerminalOutput(prev => [...prev, { type: 'info', content: `> Compiling Project (Sending all files)...` }]);
-
-    // 1. Flatten the file tree
+    setTerminalOutput(prev => [...prev, { type: 'info', content: `> Compiling Project...` }]);
     const allFiles = getAllFiles(files);
 
     try {
-      // 2. Send to backend
-      const response = await fetch('http://localhost:4000/run-project', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          files: allFiles,
-          // UPDATED: Pointing to our new main entry file
-          entryFile: "project/main.js" 
-        })
+      const data = await apiCall('/compiler/run-project', 'POST', {
+        files: allFiles,
+        entryFile: activeFile ? activeFile.name : Object.keys(allFiles)[0] 
       });
 
-      if (!response.ok) throw new Error(`Server Error: ${response.status}`);
-
-      const data = await response.json();
-      
       if (data.output) {
          setTerminalOutput(prev => [...prev, { type: 'success', content: data.output }]);
       } else if (data.error) {
@@ -292,48 +311,57 @@ console.log(greeting.toUpperCase());` }
          setTerminalOutput(prev => [...prev, { type: 'info', content: 'Project finished.' }]);
       }
     } catch (error) {
-       console.error(error);
-       setTerminalOutput(prev => [
-         ...prev, 
-         { type: 'error', content: 'Failed to connect to Project Compiler.' }
-       ]);
+       setTerminalOutput(prev => [...prev, { type: 'error', content: `Failed: ${error.message}` }]);
     }
-
     setIsRunning(false);
   };
 
   // --------------------------------------------------------------------------
-  // COLLABORATION HANDLERS
+  // COLLABORATION HANDLERS (UPDATED)
   // --------------------------------------------------------------------------
-  const handleSendInvite = () => {
-    const newPending = { id: Date.now().toString(), name: 'New Developer', email: 'dev@test.com', color: '#2ecc71' };
-    setPendingInvites(prev => [...prev, newPending]);
-    setShowInviteModal(false);
-    alert('Invite sent! (Check pending requests)');
-  };
+  const handleSendInvite = async () => {
+    if (!inviteEmail) {
+        alert("Please enter an email address");
+        return;
+    }
+   
 
-  const approveInvite = (id) => {
-    const user = pendingInvites.find(u => u.id === id);
-    if (user) {
-      setCollaborators(prev => [...prev, { ...user, status: 'online', fileId: null, cursor: { line: 0, col: 0 } }]);
-      setPendingInvites(prev => prev.filter(u => u.id !== id));
+
+    setIsInviting(true);
+    try {
+        // Call the backend API
+        const response = await apiCall(`/projects/${PROJECT_ID}/invite`, 'POST', {
+            email: inviteEmail,
+            role: inviteRole ,// 'viewer' or 'editor'
+        });
+
+        // Update local UI immediately (Optimistic update)
+        setPendingInvites(prev => [...prev, { 
+            id: Date.now().toString(), 
+            name: inviteEmail.split('@')[0], 
+            email: inviteEmail, 
+            role: inviteRole ,
+        }]);
+
+        // Reset and close
+        setInviteEmail('');
+        setInviteRole('viewer'); // Reset to default viewer
+        setShowInviteModal(false);
+        alert(`Invite sent successfully to ${inviteEmail} as ${inviteRole}.`);
+
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        setIsInviting(false);
     }
   };
 
-  const rejectInvite = (id) => {
-    if(window.confirm("Reject this request?")) {
-        setPendingInvites(prev => prev.filter(u => u.id !== id));
-    }
-  };
-
-  const revokeAccess = (id) => {
-    if (window.confirm("Revoke access for this user? They will be disconnected.")) {
-      setCollaborators(prev => prev.filter(c => c.id !== id));
-    }
-  };
+  const approveInvite = (id) => { /* Logic to re-send or manage */ };
+  const rejectInvite = (id) => { /* Logic to cancel invite via API */ };
+  const revokeAccess = (id) => { /* Logic to kick user via API */ };
 
   // --------------------------------------------------------------------------
-  // EVENT HANDLERS
+  // EVENT HANDLERS (FILES)
   // --------------------------------------------------------------------------
   const handleCodeChange = useCallback((newContent) => {
     const updateContentRecursive = (list) => list.map(item => {
@@ -342,12 +370,27 @@ console.log(greeting.toUpperCase());` }
       return item;
     });
     setFiles(prev => updateContentRecursive(prev));
-    socket.emit('code-change', { roomId, fileId: activeFileId, code: newContent });
-  }, [activeFileId, roomId]);
+
+    if(socketRef.current) {
+        socketRef.current.emit('code-change', { roomId: PROJECT_ID, fileId: activeFileId, code: newContent });
+    }
+
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await apiCall(`/projects/${PROJECT_ID}/files/${activeFileId}/content`, 'PUT', { content: newContent });
+      } catch (err) {
+        console.error("Auto-save failed", err);
+      }
+    }, 1000); 
+
+  }, [activeFileId, PROJECT_ID]);
 
   const handleLocalCursor = useCallback((cursorPos) => {
-    socket.emit('cursor-move', { roomId, fileId: activeFileId, cursor: cursorPos });
-  }, [activeFileId, roomId]);
+    if(socketRef.current) {
+        socketRef.current.emit('cursor-move', { roomId: PROJECT_ID, fileId: activeFileId, cursor: cursorPos });
+    }
+  }, [activeFileId, PROJECT_ID]);
 
   const handleFileSelect = (id, type) => {
     setSelectedId(id);
@@ -365,8 +408,9 @@ console.log(greeting.toUpperCase());` }
     setOpenFiles(newOpenFiles);
     if (activeFileId === id) {
       if (newOpenFiles.length > 0) {
-        setActiveFileId(newOpenFiles[newOpenFiles.length - 1]);
-        setSelectedId(newOpenFiles[newOpenFiles.length - 1]);
+        const nextId = newOpenFiles[newOpenFiles.length - 1];
+        setActiveFileId(nextId);
+        setSelectedId(nextId);
       } else {
         setActiveFileId(null);
         setSelectedId(null);
@@ -383,69 +427,122 @@ console.log(greeting.toUpperCase());` }
     setFiles(prev => toggleRecursive(prev));
   };
 
+  // --- CREATE ITEM ---
   const handleCreateItem = (type) => {
-    const newId = Date.now().toString();
+    const tempId = "temp_" + Date.now();
+    setCreatingType(type); 
     const newItem = {
-      id: newId, name: '', type: type, content: '',
-      children: type === 'folder' ? [] : undefined, isOpen: true
+      id: tempId, name: '', type: type, content: '',
+      children: type === 'folder' ? [] : undefined, isOpen: true,
+      isTemp: true 
     };
+
     let inserted = false;
     const addItemRecursive = (list) => {
       return list.map(item => {
-        if (item.id === selectedId) {
-          if (item.type === 'folder') {
+        if (item.id === selectedId && item.type === 'folder') {
             inserted = true;
             return { ...item, isOpen: true, children: [newItem, ...(item.children || [])] };
-          }
         }
         if (item.children) {
-           const isParentOfSelected = item.children.some(child => child.id === selectedId);
-           if (isParentOfSelected) {
-             const selectedItem = item.children.find(c => c.id === selectedId);
-             if (selectedItem.type === 'file') {
-               inserted = true;
-               return { ...item, children: [...item.children, newItem] };
-             }
-           }
            return { ...item, children: addItemRecursive(item.children) };
         }
         return item;
       });
     };
+
     let newFiles = addItemRecursive(files);
-    if (!inserted) newFiles = [...newFiles, newItem];
+    if (!inserted) {
+       newFiles = [...newFiles, newItem];
+    }
+    
     setFiles(newFiles);
-    setEditingId(newId);
+    setEditingId(tempId);
   };
 
-  const handleRename = (id, newName) => {
-    if (!newName.trim()) return;
-    const renameRecursive = (list) => list.map(item => {
-      if (item.id === id) return { ...item, name: newName };
-      if (item.children) return { ...item, children: renameRecursive(item.children) };
-      return item;
-    });
-    setFiles(prev => renameRecursive(prev));
+  // --- RENAME / CONFIRM CREATE ---
+  const handleRename = async (id, newName) => {
+    if (!newName.trim()) {
+        if(id.startsWith('temp_')) {
+             setFiles(prev => prev.filter(f => f.id !== id)); 
+             setEditingId(null);
+        }
+        return;
+    }
+    const isCreating = id.startsWith('temp_');
+
+    try {
+        if (isCreating) {
+            const parentId = findParentId(files, id);
+            const data = await apiCall(`/projects/${PROJECT_ID}/files`, 'POST', {
+                parentId: parentId, 
+                name: newName,
+                type: creatingType
+            });
+
+            const replaceRecursive = (list) => list.map(item => {
+                if (item.id === id) {
+                    return { ...item, id: data.id, name: data.name, isTemp: false }; 
+                }
+                if (item.children) return { ...item, children: replaceRecursive(item.children) };
+                return item;
+            });
+            setFiles(prev => replaceRecursive(prev));
+            setCreatingType(null);
+            
+            if(creatingType === 'file') handleFileSelect(data.id, 'file');
+
+        } else {
+            await apiCall(`/projects/${PROJECT_ID}/files/${id}/rename`, 'PUT', { name: newName });
+            const renameRecursive = (list) => list.map(item => {
+                if (item.id === id) return { ...item, name: newName };
+                if (item.children) return { ...item, children: renameRecursive(item.children) };
+                return item;
+            });
+            setFiles(prev => renameRecursive(prev));
+        }
+    } catch (err) {
+        alert(err.message);
+    }
     setEditingId(null);
   };
 
-  const handleDelete = (e, id) => {
+  const handleDelete = async (e, id) => {
     e.stopPropagation();
     if (!window.confirm("Delete this item?")) return;
-    const deleteRecursive = (list) => list.filter(item => {
-      if (item.id === id) return false;
-      if (item.children) item.children = deleteRecursive(item.children);
-      return true;
-    });
-    setFiles(prev => deleteRecursive(prev));
-    if (activeFileId === id) handleCloseTab(e, id);
-    if (openFiles.includes(id)) setOpenFiles(prev => prev.filter(fid => fid !== id));
+    try {
+        await apiCall(`/projects/${PROJECT_ID}/files/${id}`, 'DELETE');
+        const deleteRecursive = (list) => list.filter(item => {
+          if (item.id === id) return false;
+          if (item.children) item.children = deleteRecursive(item.children);
+          return true;
+        });
+        setFiles(prev => deleteRecursive(prev));
+        if (activeFileId === id) handleCloseTab(e, id);
+        if (openFiles.includes(id)) setOpenFiles(prev => prev.filter(fid => fid !== id));
+    } catch (err) {
+        alert("Failed to delete: " + err.message);
+    }
   };
+
+  // --------------------------------------------------------------------------
+  // RENDER
+  // --------------------------------------------------------------------------
+  if (loading) {
+      return (
+        <div className={`h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>
+            <div className="flex flex-col items-center gap-4">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                <p>Loading project environment...</p>
+            </div>
+        </div>
+      );
+  }
 
   return (
     <div className={`h-screen flex flex-col ${theme.bg} ${theme.text} overflow-hidden font-sans text-sm relative`}>
       
-      {/* Invite Modal Overlay */}
+      {/* --- UPDATED INVITE MODAL --- */}
       {showInviteModal && (
         <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
           <div className={`${theme.sidebarBg} border ${theme.border} p-6 rounded-xl shadow-2xl w-96 animate-fade-in`}>
@@ -454,15 +551,50 @@ console.log(greeting.toUpperCase());` }
               <button onClick={() => setShowInviteModal(false)}><X className="w-5 h-5 opacity-50 hover:opacity-100" /></button>
             </div>
             <div className="space-y-4">
+              
+              {/* Email Input */}
               <div>
                 <label className="block text-xs font-medium opacity-70 mb-1">Email Address</label>
-                <input type="email" placeholder="colleague@example.com" className={`w-full p-2 rounded-md bg-transparent border ${theme.border} outline-none focus:border-blue-500`} />
+                <div className={`flex items-center px-3 py-2 rounded-md border ${theme.border} ${theme.inputBg} focus-within:ring-2 focus-within:ring-blue-500`}>
+                    <input 
+                        type="email" 
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="colleague@example.com" 
+                        className={`flex-1 bg-transparent outline-none ${theme.inputText}`} 
+                    />
+                </div>
               </div>
+
+              {/* Role Select */}
+              <div>
+                <label className="block text-xs font-medium opacity-70 mb-1">Permission Level</label>
+                <div className={`relative px-3 py-2 rounded-md border ${theme.border} ${theme.inputBg}`}>
+                    <select 
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value)}
+                        className={`w-full bg-transparent outline-none appearance-none ${theme.inputText}`}
+                    >
+                        <option value="viewer">Viewer (Read Only)</option>
+                        <option value="editor">Editor (Full Access)</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 absolute right-3 top-2.5 opacity-50 pointer-events-none" />
+                </div>
+                <p className="text-[10px] opacity-50 mt-1">
+                    {inviteRole === 'viewer' 
+                        ? "User can view files but cannot edit code or terminal." 
+                        : "User has full access to files, code, and terminal."}
+                </p>
+              </div>
+
+              {/* Submit Button */}
               <button 
                 onClick={handleSendInvite}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-md transition-colors"
+                disabled={isInviting}
+                className={`w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-md transition-colors flex items-center justify-center ${isInviting ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
-                Send Invite
+                {isInviting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Share2 className="w-4 h-4 mr-2" />}
+                {isInviting ? 'Sending Invite...' : 'Send Invite'}
               </button>
             </div>
           </div>
@@ -485,7 +617,6 @@ console.log(greeting.toUpperCase());` }
             <span className="text-xs opacity-50">SyncCode - {activeFile ? activeFile.name : 'No file'}</span>
           </div>
           
-          {/* Button 1: Run Single File */}
           <button 
             onClick={runCode}
             disabled={isRunning || !activeFile}
@@ -496,7 +627,6 @@ console.log(greeting.toUpperCase());` }
              <span>Run File</span>
           </button>
 
-          {/* Button 2: Run Project (NEW) */}
           <button 
             onClick={runProject}
             disabled={isRunning}
@@ -514,7 +644,7 @@ console.log(greeting.toUpperCase());` }
           <div className="flex -space-x-2 mr-2">
             {collaborators.map(c => (
               <div key={c.id} className="w-6 h-6 rounded-full border-2 border-[#0d1117] flex items-center justify-center text-[10px] font-bold text-white relative group cursor-pointer" style={{ backgroundColor: c.color }}>
-                {c.name[0].toUpperCase()}
+                {c.name ? c.name[0].toUpperCase() : '?'}
                 <span className="absolute top-7 right-0 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none transition-opacity">
                   {c.name}
                 </span>
@@ -550,7 +680,7 @@ console.log(greeting.toUpperCase());` }
               </div>
               <div className="px-2 pb-2 flex-1 overflow-y-auto">
                 <div className="flex items-center justify-between text-xs px-2 py-1 mb-2 font-bold opacity-80 group cursor-pointer hover:opacity-100">
-                  <span className="flex items-center"><ChevronDown className="w-3 h-3 mr-1"/> {roomId.toUpperCase()}</span>
+                  <span className="flex items-center"><ChevronDown className="w-3 h-3 mr-1"/> PROJECT</span>
                   <div className="flex space-x-1">
                     <button onClick={() => handleCreateItem('file')} className="p-1 hover:bg-gray-500/10 rounded" title="New File"><FilePlus className="w-3.5 h-3.5" /></button>
                     <button onClick={() => handleCreateItem('folder')} className="p-1 hover:bg-gray-500/10 rounded" title="New Folder"><FolderPlus className="w-3.5 h-3.5" /></button>
@@ -583,10 +713,11 @@ console.log(greeting.toUpperCase());` }
                         <div className="flex flex-col min-w-0">
                            <span className="font-medium truncate">{user.name}</span>
                            <span className="text-[10px] opacity-50 truncate">{user.email}</span>
+                           <span className="text-[9px] text-blue-400 capitalize">{user.role}</span>
                         </div>
                         <div className="flex space-x-1">
-                           <button onClick={() => approveInvite(user.id)} className="p-1 text-green-500 hover:bg-green-500/10 rounded" title="Approve"><Check className="w-3.5 h-3.5"/></button>
-                           <button onClick={() => rejectInvite(user.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded" title="Reject"><Ban className="w-3.5 h-3.5"/></button>
+                           <button onClick={() => approveInvite(user.id)} className="p-1 text-green-500 hover:bg-green-500/10 rounded" title="Resend Invite"><Share2 className="w-3.5 h-3.5"/></button>
+                           <button onClick={() => rejectInvite(user.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded" title="Cancel"><Ban className="w-3.5 h-3.5"/></button>
                         </div>
                      </div>
                    ))}
@@ -716,7 +847,7 @@ console.log(greeting.toUpperCase());` }
 }
 
 // ----------------------------------------------------------------------------
-// Sub-Components
+// Sub-Components (UNCHANGED)
 // ----------------------------------------------------------------------------
 
 function FileTree({ items, level = 0, activeId, selectedId, editingId, collaborators = [], onToggle, onSelect, onRename, onDelete, setEditingId, theme }) {

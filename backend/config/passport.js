@@ -5,7 +5,7 @@ import User from "../models/User.js";
 
 export default function initPassport() {
 
-  // GOOGLE
+  // GOOGLE STRATEGY
   passport.use(
     new GoogleStrategy(
       {
@@ -18,11 +18,11 @@ export default function initPassport() {
           let user = await User.findOne({ googleId: profile.id });
 
           if (!user) {
-            // Check if same email used in local account
-            const existingEmail = await User.findOne({ email: profile.emails[0].value });
+            const existingEmail = await User.findOne({
+              email: profile.emails[0].value
+            });
 
             if (existingEmail) {
-              // Link Google to existing account
               existingEmail.googleId = profile.id;
               existingEmail.authProvider = "google";
               user = await existingEmail.save();
@@ -36,15 +36,16 @@ export default function initPassport() {
             }
           }
 
-          done(null, user);
+          return done(null, user);
+
         } catch (err) {
-          done(err, null);
+          return done(err, null);
         }
       }
     )
   );
 
-  // GITHUB
+  // GITHUB STRATEGY
   passport.use(
     new GitHubStrategy(
       {
@@ -59,22 +60,27 @@ export default function initPassport() {
           if (!user) {
             user = await User.create({
               username: profile.username,
-              email: profile.username + "@github.com",
+              email: `${profile.username}@github.com`,
               githubId: profile.id,
               authProvider: "github",
             });
           }
 
-          done(null, user);
+          return done(null, user);
+
         } catch (err) {
-          done(err, null);
+          return done(err, null);
         }
       }
     )
   );
 
-  passport.serializeUser((user, done) => done(null, user.id));
-  passport.deserializeUser((id, done) =>
-    User.findById(id).then((u) => done(null, u))
-  );
+  // IMPORTANT FIX
+  passport.serializeUser((user, done) => done(null, user._id));
+
+  passport.deserializeUser((id, done) => {
+    User.findById(id)
+      .then(user => done(null, user))
+      .catch(err => done(err, null));
+  });
 }

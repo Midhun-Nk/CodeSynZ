@@ -2,6 +2,18 @@ import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
+// Helper to create consistent JWT token
+function createToken(user) {
+  return jwt.sign(
+    {
+      _id: user._id,    // FIXED
+      email: user.email,
+      username: user.username
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "3d" }
+  );
+}
 
 // REGISTER
 export const register = async (req, res) => {
@@ -40,7 +52,7 @@ export const login = async (req, res) => {
     if (!user)
       return res.status(400).json({ message: "Invalid email" });
 
-    // If OAuth user — block password login
+    // Prevent OAuth-only accounts from using password login
     if (user.authProvider !== "local") {
       return res.status(400).json({
         message: `This account uses ${user.authProvider.toUpperCase()} login only.`,
@@ -51,14 +63,16 @@ export const login = async (req, res) => {
     if (!isMatch)
       return res.status(400).json({ message: "Invalid password" });
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "3d",
-    });
+    const token = createToken(user);
 
     return res.json({
       message: "Login success",
       token,
-      user: { id: user._id, username: user.username, email: user.email },
+      user: {
+        _id: user._id,
+        username: user.username,
+        email: user.email
+      },
     });
 
   } catch (err) {
@@ -68,14 +82,10 @@ export const login = async (req, res) => {
 
 // GOOGLE SUCCESS
 export const googleSuccess = async (req, res) => {
-      console.log("GOOGLE JWT_SECRET:", process.env.JWT_SECRET);  // <--- ADD THIS
-
   if (!req.user)
     return res.redirect("http://localhost:5173/login?error=no_user");
 
-  const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET, {
-    expiresIn: "3d",
-  });
+  const token = createToken(req.user);
 
   return res.redirect(`http://localhost:5173/oauth-success?token=${token}`);
 };
@@ -85,9 +95,7 @@ export const githubSuccess = async (req, res) => {
   if (!req.user)
     return res.redirect("http://localhost:5173/login?error=no_user");
 
-  const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET, {
-    expiresIn: "3d",
-  });
+  const token = createToken(req.user);
 
   return res.redirect(`http://localhost:5173/oauth-success?token=${token}`);
 };
@@ -95,7 +103,9 @@ export const githubSuccess = async (req, res) => {
 // GET CURRENT USER
 export const getCurrentUser = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
+    // req.user comes from authMiddleware → contains _id
+    const user = await User.findById(req.user._id).select("-password");
+
     if (!user) return res.status(404).json({ message: "User not found" });
 
     res.json({ user });

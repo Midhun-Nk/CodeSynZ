@@ -17,20 +17,18 @@ import { fileURLToPath } from 'url';
 import DbConfig from './config/dbconfig.js';
 import initPassport from './config/passport.js';
 import Project from './models/Project.js';
-import User from './models/User.js';
-import File from './models/File.js';
+
 
 // routes (your existing controllers/routes)
 import authRoutes from './routes/authRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';   // expects /api/projects routes
-import fileRoutes from './routes/fileProject.js';        // expects /api/projects/:projectId/files and /api/files etc
+import fileRoutes from './routes/fileRoutes.js';        // expects /api/projects/:projectId/files and /api/files etc
 
 // middlewares
 import auth from './middlewares/authMiddleware.js';
-import { checkProjectAccess } from './middlewares/projectAccess.js';
 import { rateLimiter } from './middlewares/rateLimiter.js';
 import { runSandboxed } from './utils/safeExec.js';
-
+import collabRoutes from './routes/collabRoutes.js';
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +71,7 @@ app.use('/api/projects', auth, projectRoutes);
 // GET  /projects/:projectId/files   -> getProjectFiles (protected by checkProjectAccess inside route definitions)
 // POST /files                       -> createFile (expects projectId in body; protected by checkProjectAccess as middleware)
 app.use('/api', auth, fileRoutes);
+app.use('/api', auth, collabRoutes);
 
 // ----- COMPILER: JDoodle (external) -----
 import axios from 'axios';

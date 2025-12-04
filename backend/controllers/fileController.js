@@ -35,10 +35,21 @@ export const getProjectFiles = async (req, res) => {
   }
 };
 
-// --- 2. Create File/Folder ---
+
+// --- 2. Create File/Folder (Updated) ---
 export const createFile = async (req, res) => {
   try {
-    const { projectId, parentId, name, type } = req.body;
+    const { projectId } = req.params; // Get from URL now
+    const { parentId, name, type } = req.body;
+
+    // Security Check: If parentId is provided, ensure that parent folder 
+    // actually belongs to this project!
+    if (parentId) {
+      const parentParams = await File.findOne({ _id: parentId, projectId });
+      if (!parentParams) {
+        return res.status(400).json({ message: "Parent folder does not belong to this project" });
+      }
+    }
 
     const newFile = new File({
       projectId,
@@ -62,27 +73,29 @@ export const createFile = async (req, res) => {
 
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({
-        error: "A file with this name already exists in this folder"
-      });
+      return res.status(400).json({ error: "File already exists in this directory" });
     }
     res.status(500).json({ error: error.message });
   }
 };
 
-// --- 3. Save File Content ---
+
+// --- 3. Save File Content (Updated) ---
 export const updateFileContent = async (req, res) => {
   try {
-    const { fileId } = req.params;
+    const { projectId, fileId } = req.params;
     const { content } = req.body;
 
-    const file = await File.findByIdAndUpdate(
-      fileId, 
+    // SECURITY FIX: We query by _id AND projectId.
+    // This prevents a user from editing a file in a project they don't own
+    // just by guessing a fileId.
+    const file = await File.findOneAndUpdate(
+      { _id: fileId, projectId: projectId }, 
       { content }, 
       { new: true }
     );
 
-    if (!file) return res.status(404).json({ message: 'File not found' });
+    if (!file) return res.status(404).json({ message: 'File not found or access denied' });
 
     res.json({ message: 'Saved', lastSaved: new Date() });
   } catch (error) {
@@ -90,58 +103,69 @@ export const updateFileContent = async (req, res) => {
   }
 };
 
-// --- 4. Rename File/Folder ---
+
+// --- 4. Rename File/Folder (Updated) ---
 export const renameFile = async (req, res) => {
   try {
-    const { fileId } = req.params;
+    const { projectId, fileId } = req.params;
     const { name } = req.body;
 
-    const existing = await File.findById(fileId);
-    if (!existing) return res.status(404).json({ error: "Not found" });
+    // 1. Find the file ensuring it belongs to the project
+    const existing = await File.findOne({ _id: fileId, projectId });
+    if (!existing) return res.status(404).json({ error: "File not found" });
 
+    // 2. Check for duplicate name in the *same* folder of this project
     const alreadyExists = await File.findOne({
       projectId: existing.projectId,
       parentId: existing.parentId,
-      name
+      name,
+      _id: { $ne: fileId } // Exclude self
     });
 
     if (alreadyExists) {
-      return res.status(400).json({
-        error: "A file/folder with this name already exists here"
-      });
+      return res.status(400).json({ error: "A file with this name already exists here" });
     }
 
-    const file = await File.findByIdAndUpdate(
-      fileId,
-      { name },
-      { new: true }
-    );
+    existing.name = name;
+    // Update language extension if it's a file
+    if (existing.type === 'file') {
+        existing.language = name.split('.').pop();
+    }
+    
+    await existing.save();
 
-    res.json(file);
+    res.json(existing);
 
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// --- 5. Delete File/Folder ---
 
-const deleteRecursive = async (id) => {
-  const children = await File.find({ parentId: id });
+// --- 5. Delete File/Folder (Updated) ---
+
+// Helper: Delete recursively
+const deleteRecursive = async (fileId, projectId) => {
+  // Find children ensuring they belong to the same project context
+  const children = await File.find({ parentId: fileId, projectId });
 
   for (let child of children) {
-    await deleteRecursive(child._id);
+    await deleteRecursive(child._id, projectId);
   }
 
-  await File.findByIdAndDelete(id);
+  // Delete the file itself
+  await File.findOneAndDelete({ _id: fileId, projectId });
 };
-
 
 export const deleteFile = async (req, res) => {
   try {
-    const { fileId } = req.params;
+    const { projectId, fileId } = req.params;
 
-    await deleteRecursive(fileId);
+    // Verify file exists in this project first
+    const file = await File.findOne({ _id: fileId, projectId });
+    if (!file) return res.status(404).json({ message: "File not found" });
+
+    await deleteRecursive(fileId, projectId);
 
     res.json({ message: "Deleted successfully" });
 

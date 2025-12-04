@@ -186,3 +186,37 @@ export const acceptInvite = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+
+// --- 5. Get All Projects for User (Dashboard) ---
+export const getAllProjects = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    // Find projects where the user is the Owner OR a Collaborator
+    const projects = await Project.find({
+      $or: [
+        { owner: userId },
+        { 'collaborators.user': userId }
+      ]
+    })
+    .sort({ updatedAt: -1 }) // Sort by newest first
+    .populate('owner', 'username email') 
+    .select('name description updatedAt owner collaborators'); // Select specific fields
+
+    // Format for Frontend
+    const formattedProjects = projects.map(p => ({
+      _id: p._id,
+      title: p.name,
+      description: p.description,
+      updatedAt: p.updatedAt,
+      isOwner: String(p.owner._id) === String(userId),
+      userCount: (p.collaborators?.length || 0) + 1 // +1 for owner
+    }));
+
+    res.json(formattedProjects);
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

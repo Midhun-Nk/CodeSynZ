@@ -14,9 +14,13 @@ export default function auth(req, res, next) {
       return res.status(401).json({ message: 'Invalid token payload' });
     }
 
+    console.log("AUTH HEADER:", req.headers.authorization);
+console.log("DECODED:", decoded);
+
+
     // set minimal user on req (avoid storing full user object in token)
     req.user = {
-      _id: decoded._id,
+      _id: decoded._id || decoded.id,
       email: decoded.email,
       username: decoded.username
     };

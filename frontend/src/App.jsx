@@ -40,7 +40,7 @@ export default function App() {
         />
 
         <Route 
-          path="/code-editor" 
+         path="/code-editor/:projectId"
           element={
             <ProtectedRoute>
               <CodeEditor />

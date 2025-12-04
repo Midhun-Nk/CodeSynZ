@@ -10,34 +10,26 @@ export default function OAuthSuccess() {
   const token = new URLSearchParams(window.location.search).get("token");
 
   useEffect(() => {
-    console.log("OAuthSuccess mounted");
-    console.log("Received token:", token);
-
     const handleOAuth = async () => {
       if (!token) {
         console.log("No token found in URL");
-        return;
+        return navigate("/login?error=no_token");
       }
 
+      // Save token
       setToken(token);
       localStorage.setItem("token", token);
+      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
       try {
-        console.log("Fetching user with token...");
-
-        const res = await axios.get("http://localhost:4000/api/auth/me", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        console.log("User fetched:", res.data.user);
-
+        // Fetch user
+        const res = await axios.get("http://localhost:4000/api/auth/me");
         setUser(res.data.user);
         localStorage.setItem("user", JSON.stringify(res.data.user));
 
-        console.log("Redirecting to /");
         navigate("/");
       } catch (err) {
-        console.log("OAuth failed:", err);
+        console.log("OAuth failed:", err.response?.data || err);
         navigate("/login?error=oauth_failed");
       }
     };

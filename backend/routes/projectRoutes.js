@@ -1,14 +1,15 @@
 // routes/projectRoutes.js
 import express from 'express';
-import { createProject, getProjectDetails, sendInvite, acceptInvite } from '../controllers/projectController.js';
+import { createProject, getProjectDetails, sendInvite, acceptInvite, getAllProjects } from '../controllers/projectController.js';
 import { checkProjectAccess } from '../middlewares/projectAccess.js';
+import auth from '../middlewares/authMiddleware.js';
 const router = express.Router();
 
 // Create project - auth already run in server.js when mounting
-router.post('/', createProject);
-
+router.post('/', auth, createProject);
+router.get('/', auth, getAllProjects); // List (New)
 // Get details (only owner/collaborator)
-router.get('/:projectId', checkProjectAccess, getProjectDetails);
+router.get('/:projectId',auth, checkProjectAccess, getProjectDetails);
 
 // Owner-only: send invite
 router.post('/:projectId/invite', checkProjectAccess, (req, res, next) => {
