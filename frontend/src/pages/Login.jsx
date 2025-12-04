@@ -15,12 +15,23 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
+import { useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [animate, setAnimate] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
+
+const [username, setUsername] = useState("");
+const [email, setEmail] = useState("");
+const [password, setPassword] = useState("");
+
+const { login, register, loading,loginWithGoogle, loginWithGithub } = useContext(AuthContext);
+const navigate = useNavigate();
+
 
   // Trigger animation on mount
   useEffect(() => {
@@ -62,6 +73,31 @@ export default function LoginPage() {
     featureRowBg: darkMode ? 'bg-zinc-800/30 border-zinc-700/50' : 'bg-white/60 border-zinc-200',
     featureRowText: darkMode ? 'text-zinc-300' : 'text-zinc-700',
   };
+
+
+  const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  if (isLogin) {
+    // LOGIN
+    const res = await login(email, password);
+    if (res.success) {
+      navigate("/dashboard");
+    } else {
+      alert(res.message);
+    }
+  } else {
+    // REGISTER
+    const res = await register(username, email, password);
+    if (res.success) {
+      alert("Account created! Please log in.");
+      setIsLogin(true);
+    } else {
+      alert(res.message);
+    }
+  }
+};
+
 
   return (
     <div className={`min-h-screen ${theme.bg} ${theme.text} flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-emerald-500/30 selection:text-emerald-200 transition-colors duration-500`}>
@@ -157,11 +193,13 @@ export default function LoginPage() {
 
             {/* Social Login Buttons */}
             <div className="grid grid-cols-2 gap-4 mb-8">
-              <button className={`flex items-center justify-center space-x-2 ${theme.buttonSocialBg} border ${theme.buttonSocialBorder} ${theme.buttonSocialText} py-2.5 rounded-xl transition-all duration-200 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none`}>
+              <button className={`flex items-center justify-center space-x-2 ${theme.buttonSocialBg} border ${theme.buttonSocialBorder} ${theme.buttonSocialText} py-2.5 rounded-xl transition-all duration-200 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none`} onClick={loginWithGithub}>
                 <Github className="w-5 h-5" />
                 <span className="text-sm font-medium">Github</span>
               </button>
-              <button className={`flex items-center justify-center space-x-2 ${theme.buttonSocialBg} border ${theme.buttonSocialBorder} ${theme.buttonSocialText} py-2.5 rounded-xl transition-all duration-200 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none`}>
+              <button className={`flex items-center justify-center space-x-2 ${theme.buttonSocialBg} border ${theme.buttonSocialBorder} ${theme.buttonSocialText} py-2.5 rounded-xl transition-all duration-200 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none`} 
+              onClick={loginWithGoogle}
+              >
                 <Chrome className="w-5 h-5" />
                 <span className="text-sm font-medium">Google</span>
               </button>
@@ -177,7 +215,8 @@ export default function LoginPage() {
             </div>
 
             {/* Main Form */}
-            <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+            <form className="space-y-5" onSubmit={handleSubmit}>
+
               {!isLogin && (
                 <div className="group">
                   <label className={`block text-xs font-medium ${theme.textMuted} mb-1.5 ml-1`}>Username</label>
@@ -188,7 +227,9 @@ export default function LoginPage() {
                     <input 
                       type="text" 
                       className={`block w-full pl-10 pr-3 py-2.5 ${theme.inputBg} border ${theme.inputBorder} rounded-xl ${theme.inputText} ${theme.inputPlaceholder} focus:outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all duration-200 sm:text-sm`}
-                      placeholder="johndoe"
+                      placeholder="Midhun Mike"
+                       value={username}
+  onChange={(e) => setUsername(e.target.value)}
                     />
                   </div>
                 </div>
@@ -203,7 +244,10 @@ export default function LoginPage() {
                   <input 
                     type="email" 
                     className={`block w-full pl-10 pr-3 py-2.5 ${theme.inputBg} border ${theme.inputBorder} rounded-xl ${theme.inputText} ${theme.inputPlaceholder} focus:outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all duration-200 sm:text-sm`}
-                    placeholder="name@company.com"
+                    placeholder="Mike@Studio.com"
+
+                    value={email}
+  onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
               </div>
@@ -225,6 +269,8 @@ export default function LoginPage() {
                     type={showPassword ? "text" : "password"}
                     className={`block w-full pl-10 pr-10 py-2.5 ${theme.inputBg} border ${theme.inputBorder} rounded-xl ${theme.inputText} ${theme.inputPlaceholder} focus:outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10 transition-all duration-200 sm:text-sm`}
                     placeholder="••••••••"
+                    value={password}
+    onChange={(e) => setPassword(e.target.value)}
                   />
                   <button 
                     type="button"
@@ -239,7 +285,15 @@ export default function LoginPage() {
               <button 
                 className="w-full flex items-center justify-center space-x-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20 active:scale-[0.98]"
               >
-                <span>{isLogin ? 'Sign In' : 'Create Account'}</span>
+                <span>
+  {loading 
+    ? "Please wait..." 
+    : isLogin 
+      ? "Sign In" 
+      : "Create Account"
+  }
+</span>
+
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>

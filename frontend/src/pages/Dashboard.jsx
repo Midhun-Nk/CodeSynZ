@@ -25,8 +25,10 @@ import {
   AlertCircle,
   GitBranch
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [darkMode, setDarkMode] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeFilter, setActiveFilter] = useState('All Projects');
@@ -109,7 +111,9 @@ export default function Dashboard() {
                     : 'Manage and organize all your coding projects.'}
                 </p>
               </div>
-              <button className={`${theme.accentBg} ${theme.accentHover} ${darkMode ? 'text-zinc-950' : 'text-white'} font-bold px-4 py-2.5 rounded-xl flex items-center shadow-lg ${theme.shadowGlow} transition-all active:scale-95`}>
+              <button className={`${theme.accentBg} ${theme.accentHover} ${darkMode ? 'text-zinc-950' : 'text-white'} font-bold px-4 py-2.5 rounded-xl flex items-center shadow-lg ${theme.shadowGlow} transition-all active:scale-95`}  onClick={
+                () => navigate('/code-editor')
+              } >
                 <Plus className="w-5 h-5 mr-2" />
                 New Project
               </button>
