@@ -23,7 +23,7 @@ import {
   XCircle,
   Clock,
   Loader2,
-  Mail
+  Mail,Trash2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SettingsView } from '../components/dashboard/SettingsView';
@@ -57,7 +57,7 @@ export default function Dashboard() {
   const [darkMode, setDarkMode] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeFilter, setActiveFilter] = useState('All Projects');
-
+const [activeMenuId, setActiveMenuId] = useState(null);
   // --- DATA STATE ---
   const [projects, setProjects] = useState([]);
   const [invites, setInvites] = useState([]); // Stores pending invites
@@ -170,19 +170,29 @@ export default function Dashboard() {
     shadowGlow: darkMode ? 'shadow-emerald-500/20' : 'shadow-slate-300/50',
     cardShadowHover: darkMode ? 'hover:shadow-emerald-500/10' : 'hover:shadow-slate-200',
   };
+// --- 2. NEW DELETE PROJECT HANDLER ---
+  const handleDeleteProject = async (e, projectId) => {
+    e.stopPropagation(); // Prevent card click
+    
+    if (!window.confirm("Are you sure you want to delete this project? This cannot be undone.")) {
+        return;
+    }
 
+    try {
+        await apiCall(`/projects/${projectId}`, 'DELETE');
+        // Remove from UI immediately
+        setProjects(prev => prev.filter(p => (p._id || p.id) !== projectId));
+        alert("Project deleted successfully");
+    } catch (error) {
+        alert("Failed to delete project: " + error.message);
+    }
+    setActiveMenuId(null);
+  };
   // Render Content based on Active Tab
-  const renderContent = () => {
+const renderContent = () => {
     switch (activeTab) {
       case 'team':
-        return (
-          <TeamView 
-            theme={theme} 
-            darkMode={darkMode} 
-            invites={invites}
-            onRespond={handleInviteResponse}
-          />
-        );
+        return <TeamView theme={theme} darkMode={darkMode} invites={invites} onRespond={handleInviteResponse} />;
       case 'deploy':
         return <DeploymentsView theme={theme} darkMode={darkMode} />;
       case 'settings':
@@ -192,9 +202,10 @@ export default function Dashboard() {
       default:
         return (
           <>
-            {/* Welcome Section */}
+            {/* ... (Welcome Section kept same) ... */}
             <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 space-y-4 md:space-y-0">
-              <div>
+               {/* Welcome header code... */}
+               <div>
                 <h1 className="text-3xl font-bold tracking-tight mb-2">
                   {activeTab === 'dashboard' ? 'Dashboard' : 'My Projects'}
                 </h1>
@@ -212,7 +223,6 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Grid Layout */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {/* Create New Card */}
               {(activeFilter === 'All Projects' || activeFilter === 'Recent') && (
@@ -228,27 +238,60 @@ export default function Dashboard() {
                 </button>
               )}
 
-              {/* Projects */}
+              {/* Projects Loop */}
               {!isLoading && projects.map((project, index) => {
                 const style = getProjectStyle(index);
                 const Icon = style.icon;
+                const projectId = project._id || project.id;
+                
                 return (
                   <div 
-                    key={project._id || project.id} 
-                    onClick={() => navigate(`/code-editor/${project._id || project.id}`)}
-                    className={`group relative h-48 rounded-2xl p-5 border ${theme.border} ${theme.cardBg} hover:shadow-xl ${theme.cardShadowHover} transition-all duration-300 hover:-translate-y-1 overflow-hidden cursor-pointer`}
+                    key={projectId} 
+                    onClick={() => navigate(`/code-editor/${projectId}`)}
+                    className={`group relative h-48 rounded-2xl p-5 border ${theme.border} ${theme.cardBg} hover:shadow-xl ${theme.cardShadowHover} transition-all duration-300 hover:-translate-y-1 overflow-visible cursor-pointer`}
                   >
-                    <div className={`absolute inset-0 bg-gradient-to-br ${style.bg} opacity-0 group-hover:opacity-10 transition-opacity duration-500`} />
+                    <div className={`absolute inset-0 bg-gradient-to-br ${style.bg} opacity-0 group-hover:opacity-10 transition-opacity duration-500 rounded-2xl`} />
                     <div className="relative z-10 flex flex-col h-full justify-between">
                       <div>
                         <div className="flex justify-between items-start mb-4">
                           <div className={`p-2 rounded-lg ${style.bg} ${style.color}`}>
                             <Icon className="w-5 h-5" />
                           </div>
-                          <div className="flex space-x-1">
-                             <MoreVertical className={`w-5 h-5 ${theme.textMuted}`} />
+                          
+                          {/* --- 3. MENU BUTTON & DROPDOWN --- */}
+                          <div className="relative">
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Toggle current menu
+                                    setActiveMenuId(activeMenuId === projectId ? null : projectId);
+                                }}
+                                className={`p-1 rounded-md hover:bg-zinc-500/20 transition-colors`}
+                            >
+                                <MoreVertical className={`w-5 h-5 ${theme.textMuted}`} />
+                            </button>
+
+                            {/* Dropdown Menu */}
+                            {activeMenuId === projectId && (
+                                <div className={`absolute right-0 top-8 w-40 rounded-xl border ${theme.border} ${theme.cardBg} shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100`}>
+                                    {/* Show Delete only if Owner */}
+                                    {project.isOwner ? (
+                                        <button 
+                                            onClick={(e) => handleDeleteProject(e, projectId)}
+                                            className="w-full text-left px-4 py-3 text-red-500 hover:bg-red-500/10 flex items-center gap-2 text-sm transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4" /> Delete
+                                        </button>
+                                    ) : (
+                                        <div className={`px-4 py-3 text-xs ${theme.textMuted} text-center`}>
+                                            Shared Project
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                           </div>
                         </div>
+                        
                         <h3 className="font-bold text-lg mb-1 truncate">{project.title || project.name}</h3>
                         <p className={`text-xs ${theme.textMuted} font-mono flex items-center`}>
                           <span className={`w-2 h-2 rounded-full ${darkMode ? 'bg-zinc-600' : 'bg-slate-300'} mr-2`}></span>
@@ -264,7 +307,6 @@ export default function Dashboard() {
         );
     }
   };
-
   return (
     <div className={`min-h-screen ${theme.bg} ${theme.text} font-sans transition-colors duration-300 flex overflow-hidden`}>
       

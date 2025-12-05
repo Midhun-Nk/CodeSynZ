@@ -1,4 +1,3 @@
-// server.js
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -12,43 +11,42 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import jwt from 'jsonwebtoken';
 
 // init DB + models + passport
 import DbConfig from './config/dbconfig.js';
 import initPassport from './config/passport.js';
 import Project from './models/Project.js';
 
-
-// routes (your existing controllers/routes)
+// routes
 import authRoutes from './routes/authRoutes.js';
-import projectRoutes from './routes/projectRoutes.js';   // expects /api/projects routes
-import fileRoutes from './routes/fileRoutes.js';        // expects /api/projects/:projectId/files and /api/files etc
+import projectRoutes from './routes/projectRoutes.js';
+import fileRoutes from './routes/fileRoutes.js';
+import collabRoutes from './routes/collabRoutes.js';
 
 // middlewares
 import auth from './middlewares/authMiddleware.js';
 import { rateLimiter } from './middlewares/rateLimiter.js';
 import { runSandboxed } from './utils/safeExec.js';
-import collabRoutes from './routes/collabRoutes.js';
-// Fix __dirname in ESM
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
 
-// ----- CORS -----
+const FRONTEND_URL = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+
 app.use(cors({
-  origin: process.env.FRONTEND_ORIGIN || "http://localhost:5173",
+  origin: FRONTEND_URL,
   credentials: true,
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 app.use(express.json({ limit: '10mb' }));
 
-// DB connect
 DbConfig();
 
-// ----- Session + Passport (for OAuth flows) -----
 app.use(session({
   secret: process.env.SESSION_SECRET || 'SESSION_SECRET',
   resave: false,
@@ -60,22 +58,15 @@ app.use(passport.session());
 initPassport();
 
 // ----- ROUTES -----
-// Auth routes (login, oauth callbacks)
 app.use('/api/auth', authRoutes);
-
-// Project routes (all routes under /api/projects/*)
 app.use('/api/projects', auth, projectRoutes);
-
-// File routes
-// fileRoutes should itself register routes like:
-// GET  /projects/:projectId/files   -> getProjectFiles (protected by checkProjectAccess inside route definitions)
-// POST /files                       -> createFile (expects projectId in body; protected by checkProjectAccess as middleware)
 app.use('/api', auth, fileRoutes);
 app.use('/api', auth, collabRoutes);
 
-// ----- COMPILER: JDoodle (external) -----
+// ----- COMPILER ROUTES (Keep existing) -----
 import axios from 'axios';
 app.post('/api/compiler/run', auth, rateLimiter, async (req, res) => {
+  // ... (Keep your existing JDoodle logic)
   const { script, language, versionIndex } = req.body;
   try {
     const response = await axios.post('https://api.jdoodle.com/v1/execute', {
@@ -87,11 +78,14 @@ app.post('/api/compiler/run', auth, rateLimiter, async (req, res) => {
     });
     res.json({ output: response.data.output });
   } catch (err) {
-    console.error('JDoodle error:', err.response?.data || err.message);
-    res.status(500).json({ error: 'Execution failed', details: err.message });
+    res.status(500).json({ error: 'Execution failed' });
   }
 });
 
+// app.post('/api/compiler/run-project', auth, rateLimiter, async (req, res) => {
+//   // ... (Keep your existing Local run logic)
+//   res.json({ output: "Multi-file execution placeholder" }); 
+// });
 // ----- COMPILER: Local multi-file run (sandboxed) -----
 app.post('/api/compiler/run-project', auth, rateLimiter, async (req, res) => {
   const { files, entryFile } = req.body;
@@ -124,105 +118,165 @@ app.post('/api/compiler/run-project', auth, rateLimiter, async (req, res) => {
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
   }
 });
-
-// ----- SOCKET.IO -----
+// ---------------------------------------------------------
+// SOCKET.IO SETUP
+// ---------------------------------------------------------
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_ORIGIN || "http://localhost:5173",
+    origin: FRONTEND_URL,
     methods: ["GET", "POST"],
     credentials: true
   }
 });
 
-// We'll keep an in-memory map for quick lookups, but persist presence to DB
-const socketUserMap = new Map(); // socketId -> { userId, projectId, color, name }
+const socketUserMap = new Map();
 
+// 1. AUTH MIDDLEWARE
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth.token || socket.handshake.headers.token;
+    if (!token) return next(new Error("Authentication error: No token provided"));
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.user = decoded; 
+    next();
+  } catch (err) {
+    console.error("Socket Auth Error:", err.message);
+    next(new Error("Authentication error: Invalid Token"));
+  }
+});
+
+// 2. CONNECTION HANDLER
 io.on('connection', (socket) => {
-  console.log('socket connected', socket.id);
+  // --- DEBUG LOG ---
+  // Depending on how your JWT is signed, ID might be in .id or ._id
+  const connectedUserId = socket.user.id || socket.user._id;
+  console.log(`[SOCKET] Connected: ${socket.id} | UserID: ${connectedUserId}`);
 
-  socket.on('join-room', async ({ roomId, userName, color, token }) => {
+  socket.on('join-room', async ({ roomId, userName, color }) => {
     try {
-      // Validate JWT token (optional — recommend validating on connection)
-      // We rely on your frontend to send auth per API calls; still persist join event
-      socket.join(roomId);
-      socketUserMap.set(socket.id, { roomId, name: userName, color, socketId: socket.id });
+      // 1. Safe ID Extraction
+      const userId = socket.user.id || socket.user._id;
+      const userEmail = socket.user.email ? socket.user.email.toLowerCase() : '';
 
-      // Persist "online" status in project collaborators if present
-      // Try to find a Project doc with this roomId (you can use a mapping if roomId !== project._id)
-      // Here we assume roomId === project._id
-      const project = await Project.findById(roomId);
-      if (project) {
-        // nothing automatic — frontend should have invited/collaborator mapping
-        // but we update collaborator status if user already present in project.collaborators by email/username
-        // We'll emit current list
-        const users = socketArrayForProject(roomId);
-        io.to(roomId).emit('sync-users', users);
+      console.log(`[SOCKET] ${userName} attempting to join ${roomId}`);
 
-        // also notify others
-        socket.to(roomId).emit('user-joined', { id: socket.id, name: userName, color });
+      // 2. Fetch Project
+      const project = await Project.findById(roomId).populate('collaborators.user');
+      
+      if (!project) {
+        console.log(`[SOCKET] Project ${roomId} not found`);
+        socket.emit('error', 'Project not found');
+        return;
       }
+
+      // 3. Permission Check Logic
+      const ownerId = project.owner.toString();
+      const isOwner = ownerId === userId;
+      
+      const isCollab = project.collaborators.some(c => 
+         c.user && c.user._id.toString() === userId
+      );
+
+      const isInvited = project.invitations.some(inv => 
+         inv.email.toLowerCase() === userEmail
+      );
+
+      console.log(`[SOCKET] Permissions -> Owner: ${isOwner}, Collab: ${isCollab}, Invited: ${isInvited}`);
+
+      if (!isOwner && !isCollab && !isInvited) {
+         console.log(`[SOCKET] ACCESS DENIED for ${userName}`);
+         socket.emit('error', 'Access Denied');
+         return;
+      }
+
+      // 4. Determine Role
+      let role = 'viewer';
+      if (isOwner) role = 'owner';
+      else if (isCollab) {
+          const c = project.collaborators.find(c => c.user._id.toString() === userId);
+          role = c.role;
+      } else if (isInvited) {
+          const inv = project.invitations.find(i => i.email.toLowerCase() === userEmail);
+          role = inv.role;
+      }
+
+      // 5. Join Room & Store
+      socket.join(roomId);
+      
+      socketUserMap.set(socket.id, { 
+          userId, 
+          roomId, 
+          name: userName, 
+          color, 
+          role, 
+          socketId: socket.id 
+      });
+
+      // 6. Broadcast Sync
+      const users = socketArrayForProject(roomId);
+      console.log(`[SOCKET] Broadcasting sync-users to ${roomId}. Users:`, users.length);
+      
+      // Emit to SELF
+      socket.emit('sync-users', users);
+      // Emit to OTHERS
+      socket.to(roomId).emit('sync-users', users);
+      socket.to(roomId).emit('user-joined', { id: socket.id, name: userName, color });
+
     } catch (err) {
-      console.error('join-room error', err);
+      console.error('[SOCKET] join-room error:', err);
+      socket.emit('error', 'Server error while joining');
     }
   });
 
   socket.on('code-change', ({ roomId, fileId, code }) => {
+    const user = socketUserMap.get(socket.id);
+    if (!user) return; // User not in map?
+
+    // Security: Viewers cannot edit
+    if (user.role === 'viewer') return; 
+
+    // Broadcast to everyone else in room
     socket.to(roomId).emit('code-update', { fileId, code });
   });
 
-  socket.on('cursor-move', async ({ roomId, fileId, cursor, userId }) => {
-    // update in-memory
-    const current = socketUserMap.get(socket.id) || {};
+  socket.on('cursor-move', ({ roomId, fileId, cursor }) => {
+    const current = socketUserMap.get(socket.id);
+    if (!current) return;
+
+    // Update memory
     socketUserMap.set(socket.id, { ...current, fileId, cursor });
 
-    // emit to others
+    // Broadcast
     socket.to(roomId).emit('cursor-update', { id: socket.id, fileId, cursor });
-
-    // Optionally persist to Project.collaborators (if the user is part of that project)
-    try {
-      if (userId && roomId) {
-        await Project.updateOne(
-          { _id: roomId, 'collaborators.user': userId },
-          { $set: {
-            'collaborators.$.cursorPosition': cursor,
-            'collaborators.$.activeFileId': fileId,
-            'collaborators.$.status': 'online'
-          } }
-        );
-      }
-    } catch (err) {
-      console.error('Failed to persist cursor:', err);
-    }
   });
 
-  socket.on('file-structure-change', ({ roomId }) => {
-    socket.to(roomId).emit('file-structure-update');
-  });
-
-  socket.on('disconnect', async () => {
+  socket.on('disconnect', () => {
     const info = socketUserMap.get(socket.id);
     if (info) {
+      console.log(`[SOCKET] Disconnected: ${info.name}`);
       socket.to(info.roomId).emit('user-left', socket.id);
       socketUserMap.delete(socket.id);
-
-      // Optionally set user offline in DB (requires userId)
-      // skip if not known
     }
   });
 });
 
-// helper: return simple list of online users for projectId
 function socketArrayForProject(projectId) {
   const arr = [];
   for (const [sid, info] of socketUserMap.entries()) {
     if (info.roomId === String(projectId)) {
-      arr.push({ id: sid, name: info.name, color: info.color, fileId: info.fileId, cursor: info.cursor });
+      arr.push({ 
+          id: sid, 
+          name: info.name, 
+          color: info.color, 
+          fileId: info.fileId, 
+          cursor: info.cursor 
+      });
     }
   }
   return arr;
 }
 
-// ----- START SERVER -----
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`Server listening on ${PORT}`);

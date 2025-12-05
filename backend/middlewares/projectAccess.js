@@ -18,34 +18,56 @@ export async function checkProjectAccess(req, res, next) {
     }
 
     const userId = req.user._id.toString();
+    // FIX 1: Normalize email to lowercase to prevent mismatch errors
+    const userEmail = req.user.email ? req.user.email.toLowerCase() : ''; 
 
+    // Fetch project and populate collaborators
     const project = await Project.findById(projectId).populate('collaborators.user');
+    
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
+    // 1. Check Ownership
     const isOwner = project.owner.toString() === userId;
 
-    // Filter out deleted users (null)
+    // 2. Check Active Collaborators
     const collaborator = project.collaborators.find(c => {
       if (!c.user) return false;
       const colId = c.user._id ? c.user._id.toString() : c.user.toString();
       return colId === userId;
     });
-
     const isCollaborator = !!collaborator;
 
-    log("OWNER:", project.owner.toString());
-    log("USER :", userId);
-    log("IS OWNER?", isOwner);
-    log("IS COLLAB?", isCollaborator);
+    // 3. Check Pending Invitations (FIX 2: Case Insensitive Check)
+    // This ensures invited users can view the project to Accept/Reject the invite
+    const pendingInvite = project.invitations?.find(inv => 
+        inv.email.toLowerCase() === userEmail
+    );
+    const isInvited = !!pendingInvite;
 
-    if (!isOwner && !isCollaborator) {
-      return res.status(403).json({ message: 'Access denied (not owner/collaborator)' });
+    log("User:", userEmail, "| Owner:", isOwner, "| Collab:", isCollaborator, "| Invited:", isInvited);
+
+    // 4. Final Access Decision
+    // If you are not owner, not a collaborator, and not invited, you cannot see the project.
+    if (!isOwner && !isCollaborator && !isInvited) {
+      return res.status(403).json({ message: 'Access denied: You are not a member of this project.' });
+    }
+
+    // 5. Determine Role
+    // Priority: Owner -> Active Collaborator Role -> Invited Role -> Viewer
+    let role = 'viewer';
+    if (isOwner) {
+        role = 'owner';
+    } else if (isCollaborator) {
+        role = collaborator.role;
+    } else if (isInvited) {
+        // Allow invited users to see the project so they can accept the invite
+        role = pendingInvite.role || 'viewer';
     }
 
     // Pass data to controllers
     req.project = project;
     req.isOwner = isOwner;
-    req.collaboratorRole = isOwner ? 'owner' : collaborator?.role || 'viewer';
+    req.collaboratorRole = role;
 
     next();
 
@@ -55,7 +77,7 @@ export async function checkProjectAccess(req, res, next) {
   }
 }
 
-// OWNER-ONLY ACCESS (used for invite + dangerous actions)
+// OWNER-ONLY ACCESS
 export function requireOwner(req, res, next) {
   if (!req.isOwner) {
     return res.status(403).json({ message: 'Only project owner can perform this action' });

@@ -18,7 +18,7 @@ export const createProject = async (req, res) => {
     });
 
     res.status(201).json({
-      id: project._id,
+      id: project._id, // Standardize to 'id' for frontend
       name: project.name,
       description: project.description
     });
@@ -28,28 +28,32 @@ export const createProject = async (req, res) => {
   }
 };
 
-// --- 2. Get Project Details (Metadata + Collabs + Invites) ---
-// This populates the "Collaboration" sidebar
+// --- 2. Get Project Details (FIXED) ---
 export const getProjectDetails = async (req, res) => {
   try {
     const { projectId } = req.params;
     const userId = req.user._id;
 
+    // 1. Fetch Project with Access Requests Populated
     const project = await Project.findById(projectId)
       .populate('owner', 'username email avatarColor')
-      .populate('collaborators.user', 'username email avatarColor');
+      .populate('collaborators.user', 'username email avatarColor')
+      .populate('accessRequests.user', 'username email'); // <--- CRITICAL FIX
 
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    // --- Authorization: Only owner/collaborator can access ---
+    // 2. Authorization
     const isOwner = String(project.owner._id) === String(userId);
     const isCollaborator = project.collaborators.some(c => String(c.user?._id) === String(userId));
+    
+    // Allow invited users to view (so they can accept!)
+    const isInvited = project.invitations.some(inv => inv.email === req.user.email);
 
-    if (!isOwner && !isCollaborator) {
+    if (!isOwner && !isCollaborator && !isInvited) {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    // SAFE MAP (avoid undefined user)
+    // 3. Format Collaborators
     const collabs = project.collaborators
       .filter(c => c.user)
       .map(c => ({
@@ -59,32 +63,35 @@ export const getProjectDetails = async (req, res) => {
         color: c.user.avatarColor,
         role: c.role,
         status: c.status,
-        cursor: c.cursorPosition,
         activeFileId: c.activeFileId
       }));
 
-    const response = {
+    // 4. Format Access Requests (Only visible to OWNER)
+    let formattedRequests = [];
+    if (isOwner && project.accessRequests) {
+        formattedRequests = project.accessRequests
+            .filter(req => req.status === 'pending')
+            .map(req => ({
+                _id: req._id,
+                user: req.user, // Now fully populated
+                email: req.email,
+                requestedAt: req.requestedAt
+            }));
+    }
+
+    res.json({
       id: project._id,
       name: project.name,
       owner: project.owner,
       collaborators: collabs,
-      pendingInvites: project.invitations.map(inv => ({
-        id: inv._id,
-        email: inv.email,
-        status: inv.status,
-        role: inv.role,
-        sentAt: inv.sentAt
-      }))
-    };
-
-    res.json(response);
+      invitations: project.invitations,
+      accessRequests: formattedRequests // <--- Sending to frontend
+    });
 
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
-
-
 // --- 3. Send Invite ---
 export const sendInvite = async (req, res) => {
   try {
@@ -215,6 +222,30 @@ export const getAllProjects = async (req, res) => {
     }));
 
     res.json(formattedProjects);
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// --- 6. Delete Project ---
+export const deleteProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user._id;
+
+    const project = await Project.findById(projectId);
+    
+    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    // Ensure only the owner can delete
+    if (String(project.owner) !== String(userId)) {
+      return res.status(403).json({ message: "Only the owner can delete this project" });
+    }
+
+    await Project.findByIdAndDelete(projectId);
+    
+    res.json({ message: "Project deleted successfully" });
 
   } catch (error) {
     res.status(500).json({ error: error.message });

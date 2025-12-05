@@ -16,7 +16,7 @@ const projectSchema = new mongoose.Schema({
     required: true 
   },
 
-  // 2. COLLABORATORS: Users who accepted invites (Matches "collaborators" state)
+  // 2. COLLABORATORS: Users who accepted invites
   collaborators: [{
     user: { 
       type: mongoose.Schema.Types.ObjectId, 
@@ -27,11 +27,12 @@ const projectSchema = new mongoose.Schema({
       enum: ['editor', 'viewer'], 
       default: 'editor' 
     },
+    // Real-time presence data
     cursorPosition: {
         line: { type: Number, default: 0 },
         col: { type: Number, default: 0 }
     },
-    activeFileId: { type: String, default: null }, // File they are currently viewing
+    activeFileId: { type: String, default: null }, 
     status: {
         type: String,
         enum: ['online', 'offline'],
@@ -39,7 +40,7 @@ const projectSchema = new mongoose.Schema({
     }
   }],
 
-  // 3. PENDING INVITES: Sent but not accepted (Matches "pendingInvites" state)
+  // 3. OUTBOUND INVITES: Owner invited someone (Status: pending -> accepted/rejected)
   invitations: [{
     email: { type: String, required: true },
     role: { type: String, default: 'editor' },
@@ -51,9 +52,25 @@ const projectSchema = new mongoose.Schema({
     sentAt: { type: Date, default: Date.now }
   }],
 
+  // 4. INBOUND ACCESS REQUESTS (NEW FIELD) 
+  // Users asking "Can I join?" (Status: pending -> (moves to collaborators) or ignored)
+  accessRequests: [{
+    user: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'User',
+        required: true
+    },
+    email: { type: String }, // Stored for easier UI display without population
+    status: { 
+        type: String, 
+        enum: ['pending', 'ignored'], 
+        default: 'pending' 
+    },
+    requestedAt: { type: Date, default: Date.now }
+  }],
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
-
 
 export default mongoose.model('Project', projectSchema);
