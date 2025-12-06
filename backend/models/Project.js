@@ -7,7 +7,11 @@ const projectSchema = new mongoose.Schema({
     trim: true,
     default: "Untitled Project"
   },
-  description: String,
+  description: {
+    type: String,
+    trim: true,
+    default: "No description provided"
+  },
   
   // 1. OWNER: The creator (Full Control)
   owner: { 

@@ -47,7 +47,7 @@ import {
   CheckCircle2,
   CloudRain,
   Folder,
-  FolderOpen
+  FolderOpen,
   
 } from "lucide-react";
 import CodeMirror from "@uiw/react-codemirror";
@@ -67,10 +67,10 @@ const SOCKET_URL = "http://localhost:4000";
 const githubDarkTheme = EditorView.theme(
   {
     "&": { color: "#e4e4e7", backgroundColor: "#18181b" }, // Zinc-900 bg
-    ".cm-content": { caretColor: "#3b82f6" }, // Blue caret
-    "&.cm-focused .cm-cursor": { borderLeftColor: "#3b82f6" },
+    ".cm-content": { caretColor: "#10b981" }, // Blue caret
+    "&.cm-focused .cm-cursor": { borderLeftColor: "#10b981" },
     "&.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "rgba(59, 130, 246, 0.3)", // Transparent blue selection
+      backgroundColor: "rgba(16, 185, 129, 0.3)", // Transparent blue selection
     },
     ".cm-gutters": {
       backgroundColor: "#18181b",
@@ -166,7 +166,7 @@ export default function CodeEditor() {
     inputText: darkMode ? "text-white" : "text-black",
     terminalBg: darkMode ? "bg-[#18181b]" : "bg-white",
     hoverBg: darkMode ? "hover:bg-white/5" : "hover:bg-black/5",
-    accent: "text-blue-500",
+    accent: "text-emerald-500",
   };
 
   const toggleTheme = () => setDarkMode(!darkMode);
@@ -474,7 +474,7 @@ export default function CodeEditor() {
     return (
       <div className={`h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>
         <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
+            <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
             <p className="text-lg font-medium animate-pulse">Initializing Environment...</p>
         </div>
       </div>
@@ -597,10 +597,10 @@ export default function CodeEditor() {
              {/* Left: Brand & Menu */}
              <div className="flex items-center space-x-6">
                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                      <Code2 className="w-5 h-5 text-white" />
                   </div>
-                  <span className="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">
+                  <span className="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-emerald-600">
                      SyncCode
                   </span>
                </div>
@@ -1124,8 +1124,8 @@ export default function CodeEditor() {
                      </>
                    ) : (
                      <div className="flex-1 flex flex-col items-center justify-center opacity-40 select-none">
-                       <div className="w-32 h-32 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 rounded-full flex items-center justify-center mb-6">
-                         <Code2 className="w-16 h-16 text-blue-500/50" />
+                       <div className="w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-emerald-700/10 rounded-full flex items-center justify-center mb-6">
+                         <Code2 className="w-16 h-16 text-emerald-500/50" />
                        </div>
                        <h2 className="text-xl font-bold mb-2">No file is open</h2>
                        <p className="text-sm">
@@ -1154,7 +1154,7 @@ export default function CodeEditor() {
                    >
                      <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-white/5">
                        <div className="flex space-x-4">
-                         <span className="font-bold border-b-2 border-blue-500 pb-2 -mb-2.5 text-blue-400">
+                         <span className="font-bold border-b-2 border-blue-500 pb-2 -mb-2.5 text-emerald-400">
                            TERMINAL
                          </span>
                          <span className="opacity-50 hover:opacity-100 cursor-pointer">
@@ -1198,7 +1198,7 @@ export default function CodeEditor() {
                          </div>
                        ))}
                        {isRunning && (
-                         <div className="text-blue-400 animate-pulse">
+                         <div className="text-emerald-400 animate-pulse">
                            _ Executing script...
                          </div>
                        )}

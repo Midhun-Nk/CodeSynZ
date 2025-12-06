@@ -80,7 +80,7 @@ export const getProjectDetails = async (req, res) => {
     }
 
     res.json({
-      id: project._id,
+      _id: project._id,
       name: project.name,
       owner: project.owner,
       collaborators: collabs,

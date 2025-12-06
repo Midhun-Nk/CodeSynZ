@@ -114,3 +114,37 @@ export const getCurrentUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+
+const getRandomColor = () => {
+  const colors = ["3b82f6", "ef4444", "10b981", "f59e0b", "8b5cf6", "ec4899"];
+  return colors[Math.floor(Math.random() * colors.length)];
+};
+
+export const registerUser = async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+
+    // 1. Generate a random color for the background
+    const randomColor = getRandomColor();
+
+    // 2. Create the default profile image URL
+    // Format: https://ui-avatars.com/api/?name=USERNAME&background=COLOR&color=fff
+    const defaultImage = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=${randomColor}&color=fff&size=128&bold=true`;
+
+    // 3. Create the user
+    const newUser = new User({
+      username,
+      email,
+      password, // Remember to hash this password using bcrypt!
+      avatarColor: `#${randomColor}`, // Store color with # for frontend usage if needed
+      profileImage: defaultImage, // <--- SAVES THE GENERATED IMAGE URL
+    });
+
+    const savedUser = await newUser.save();
+
+    res.status(201).json(savedUser);
+  } catch (err) {
+    res.status(500).json(err);
+  }
+};
