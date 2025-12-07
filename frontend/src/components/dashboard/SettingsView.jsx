@@ -9,7 +9,8 @@ export function SettingsView({ theme, darkMode, currentUser, token }) {
     email: "",
     userId: ""
   });
-  
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000/api';
+
   // 2. State for Image Handling
   const [selectedFile, setSelectedFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -64,7 +65,7 @@ export function SettingsView({ theme, darkMode, currentUser, token }) {
 
       // CALL THE API
       const res = await axios.put(
-        "http://localhost:4000/api/auth/update-profile", // Your Backend URL
+        `${BACKEND_URL}/auth/update-profile`, // Your Backend URL
         data,
         {
           headers: { "Content-Type": "multipart/form-data",

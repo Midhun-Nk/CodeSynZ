@@ -6,6 +6,7 @@ import axios from "axios";
 export default function OAuthSuccess() {
   const navigate = useNavigate();
   const { setToken, setUser } = useContext(AuthContext);
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000/api';
 
   const token = new URLSearchParams(window.location.search).get("token");
 
@@ -23,7 +24,7 @@ export default function OAuthSuccess() {
 
       try {
         // Fetch user
-        const res = await axios.get("http://localhost:4000/api/auth/me");
+        const res = await axios.get(`${BACKEND_URL}/auth/me`);
         setUser(res.data.user);
         localStorage.setItem("user", JSON.stringify(res.data.user));
 

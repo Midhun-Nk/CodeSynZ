@@ -7,11 +7,11 @@ import { toast } from 'sonner';
 
 export const CodeContext = createContext();
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000/api';
 
 // --- CONFIG ---
-const API_URL = 'http://localhost:4000/api';
-const SOCKET_URL = 'http://localhost:4000';
-
+const API_URL = BACKEND_URL;
+const SOCKET_URL = BACKEND_URL.replace('/api', '');
 // --- HELPER: API FETCH ---
 const api = axios.create({
   baseURL: API_URL,

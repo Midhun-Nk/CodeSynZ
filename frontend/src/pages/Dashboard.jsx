@@ -12,9 +12,10 @@ import CollabrationInvitations from '../components/dashboard/CollabrationInvitat
 import { useTheme } from '../context/ThemeContext';
 import { AuthContext } from '../context/AuthContext';
 import { toast } from 'sonner';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000/api';
 
 // --- CONFIG ---
-const API_URL = 'http://localhost:4000/api';
+const API_URL = BACKEND_URL;
 
 // --- API HELPER ---
 const apiCall = async (endpoint, method = 'GET', body = null) => {

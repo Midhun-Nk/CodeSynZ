@@ -61,7 +61,9 @@ import { CodeContext } from "../context/CodeContext";
 import { useTheme } from "../context/ThemeContext";
 
 // --- CONFIG ---
-const SOCKET_URL = "http://localhost:4000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000/api';
+const API_URL = BACKEND_URL;
+const SOCKET_URL = BACKEND_URL.replace('/api', '');
 
 // --- THEME DEFINITION ---
 // --- THEME DEFINITION (Refined for Modern Look) ---

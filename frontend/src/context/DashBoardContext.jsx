@@ -3,8 +3,9 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 export const DashboardContext = createContext();
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000/api';
 
-const API = "http://localhost:4000/api/auth";
+const API = `${BACKEND_URL}/auth`;
 
 export default function DashboardProvider({ children }) {
     const navigate = useNavigate();
