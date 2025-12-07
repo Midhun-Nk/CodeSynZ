@@ -31,7 +31,7 @@ export function Toaster({ darkMode }) {
       }}
       // Use rich colors if you want the icons to be colored automatically
       richColors={false} 
-      position="bottom-right"
+      position="top-right"
     />
   );
 }

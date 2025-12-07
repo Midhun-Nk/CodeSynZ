@@ -1,11 +1,11 @@
 import express from "express";
 import passport from "passport";
 import { 
-  register, 
   login, 
   googleSuccess, 
   githubSuccess, 
-  getCurrentUser
+  getCurrentUser,
+  registerUser
 } from "../controllers/authController.js";
 import auth from "../middlewares/authMiddleware.js";
 import multer from 'multer';
@@ -15,7 +15,7 @@ import User from '../models/User.js';
 const router = express.Router();
 
 // Email + Password
-router.post("/register", register);
+router.post("/register", registerUser);
 router.post("/login", login);
 
 // Google OAuth

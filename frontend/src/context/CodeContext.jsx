@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import { useParams, useNavigate } from 'react-router-dom';
 import { EditorView } from '@codemirror/view';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 export const CodeContext = createContext();
 
@@ -46,16 +47,16 @@ const apiCall = async (endpoint, method = "GET", body = null) => {
 export const CodeProvider = ({ children }) => {
 
       const handleSendInvite = async (inviteEmail, inviteRole, PROJECT_ID, setPendingInvites, setInviteEmail, setShowInviteModal, setIsInviting) => {
-    if (!inviteEmail) { alert("Please enter an email address"); return; }
+    if (!inviteEmail) { toast.error("Please enter an email address"); return; }
     setIsInviting(true);
     try {
         await apiCall(`/projects/${PROJECT_ID}/invite`, 'POST', { email: inviteEmail, role: inviteRole });
         setPendingInvites(prev => [...prev, { id: Date.now(), email: inviteEmail, role: inviteRole }]);
         setInviteEmail('');
         setShowInviteModal(false);
-        alert(`Invite sent successfully.`);
+        toast.success(`Invite sent successfully.`);
     } catch (error) {
-        alert(error.message);
+        toast.error(error.message);
     } finally {
         setIsInviting(false);
     }
@@ -69,13 +70,13 @@ export const CodeProvider = ({ children }) => {
     try {
       await apiCall(`/projects/${PROJECT_ID}/request-access`, 'POST');
       setAccessRequestSent(true);
-      alert("Request sent successfully.");
+      toast.success("Request sent successfully.");
     } catch (err) {
       if(err.message.includes("already pending")) {
           setAccessRequestSent(true);
-          alert("Request is already pending.");
+          toast.warning("Request is already pending.");
       } else {
-          alert("Failed to send request: " + err.message);
+          toast.error("Failed to send request: " + err.message);
       }
     } finally {
       setIsRequestingAccess(false);
@@ -107,10 +108,10 @@ export const CodeProvider = ({ children }) => {
             color: "#888888",
           },
         ]);
-        alert(`Request approved. ${user.username} added to team.`);
+        toast.success(`Request approved. ${user.username} added to team.`);
       }
     } catch (error) {
-      alert(error.message);
+      toast.error(error.message);
     }
   };
 
@@ -129,10 +130,10 @@ export const CodeProvider = ({ children }) => {
         `/projects/${PROJECT_ID}/collaborators/${currentUserId}`,
         "DELETE"
       );
-      alert("You have left the project.");
+      toast.success("You have left the project.");
       navigate("/");
     } catch (error) {
-      alert("Failed to leave project: " + error.message);
+      toast.error("Failed to leave project: " + error.message);
     }
   };
   const handleRemoveMember = async (userId,
@@ -147,9 +148,9 @@ export const CodeProvider = ({ children }) => {
       );
       setProjectMembers((prev) => prev.filter((m) => m.id !== userId));
       setOnlineUsers((prev) => prev.filter((u) => u.id !== userId));
-      alert("User removed successfully.");
+      toast.success("User removed successfully.");
     } catch (error) {
-      alert("Failed to remove user: " + error.message);
+      toast.error("Failed to remove user: " + error.message);
     }
   };
 
@@ -166,7 +167,7 @@ export const CodeProvider = ({ children }) => {
         prev.map((m) => (m.id === userId ? { ...m, role: newRole } : m))
       );
     } catch (error) {
-      alert("Error changing role: " + error.message);
+      toast.error("Error changing role: " + error.message);
     }
   };
  const handleRename = async (id, newName, PROJECT_ID, files, setFiles, creatingType, setCreatingType, setEditingId, handleFileSelect) => {
@@ -221,7 +222,7 @@ export const CodeProvider = ({ children }) => {
         setFiles((prev) => renameRecursive(prev));
       }
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message);
     }
     setEditingId(null);
   };
@@ -357,7 +358,7 @@ export const CodeProvider = ({ children }) => {
       if (openFiles.includes(id))
         setOpenFiles((prev) => prev.filter((fid) => fid !== id));
     } catch (err) {
-      alert("Failed to delete: " + err.message);
+      toast.error("Failed to delete: " + err.message);
     }
   };
 

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { 
   Search, Bell, Plus, LayoutGrid, Folder, Users, Settings, LogOut, 
   Sun, Moon, MoreVertical, Terminal, Code2, Cpu, Globe, Zap, Hash,
-  Loader2, Mail, Trash2, X, Type, FileText, Filter
+  Loader2, Mail, Trash2, X, Type, FileText, Filter,ChevronDown, Check
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SettingsView } from '../components/dashboard/SettingsView';
@@ -10,6 +10,8 @@ import { DeploymentsView } from '../components/dashboard/DeploymentsView';
 import { NavItem } from '../components/dashboard/NavItem';
 import CollabrationInvitations from '../components/dashboard/CollabrationInvitations';
 import { useTheme } from '../context/ThemeContext';
+import { AuthContext } from '../context/AuthContext';
+import { toast } from 'sonner';
 
 // --- CONFIG ---
 const API_URL = 'http://localhost:4000/api';
@@ -35,13 +37,22 @@ const apiCall = async (endpoint, method = 'GET', body = null) => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  
+  const LANGUAGE_OPTIONS = [
+  { name: 'Node.js', icon: Hash, color: 'text-green-500', bg: 'bg-green-500/10' },
+  { name: 'React', icon: Code2, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  { name: 'Python', icon: Cpu, color: 'text-yellow-500', bg: 'bg-yellow-500/10' },
+  { name: 'Go', icon: Terminal, color: 'text-cyan-500', bg: 'bg-cyan-500/10' },
+  { name: 'Rust', icon: Zap, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+  { name: 'HTML/CSS', icon: Globe, color: 'text-pink-500', bg: 'bg-pink-500/10' },
+];
   // --- STATE ---
   const [activeTab, setActiveTab] = useState('dashboard');
-  
+  // 1. NEW STATE FOR LANGUAGE
+const [newProjectLang, setNewProjectLang] = useState(LANGUAGE_OPTIONS[0]); // Default to Node.js
+const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState('All'); 
   const [activeMenuId, setActiveMenuId] = useState(null);
-
+const {logout} = useContext(AuthContext);
   const [projects, setProjects] = useState([]);
   const [invites, setInvites] = useState([]); 
   const [isLoading, setIsLoading] = useState(true);
@@ -113,38 +124,44 @@ export default function Dashboard() {
         const updatedProjects = await apiCall('/projects');
         setProjects(updatedProjects);
       }
-      alert(`Invite ${status} successfully.`);
+      toast.success(`Invite ${status} successfully.`);
     } catch (error) {
-      alert(`Error responding to invite: ${error.message}`);
+      toast.error(`Error responding to invite: ${error.message}`);
     }
   };
+const handleCreateProject = () => {
+  setNewProjectName('');
+  setNewProjectDesc('');
+  setNewProjectLang(LANGUAGE_OPTIONS[0]); // Reset language to default
+  setShowCreateModal(true);
+};
 
-  const handleCreateProject = () => {
-    setNewProjectName('');
-    setNewProjectDesc('');
-    setShowCreateModal(true);
-  };
-
-  const submitCreateProject = async () => {
-    if (!newProjectName.trim()) {
-        alert("Project name is required");
-        return;
-    }
-    try {
-      setIsCreating(true);
-      const newProject = await apiCall('/projects', 'POST', { 
-        name: newProjectName,
-        description: newProjectDesc || "No description provided" 
-      });
-      setShowCreateModal(false); 
-      navigate(`/code-editor/${newProject._id}`); 
-    } catch (error) {
-      alert("Error creating project: " + error.message);
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
+const submitCreateProject = async () => {
+  if (!newProjectName.trim()) {
+      toast.error("Project name is required");
+      return;
+  }
+  try {
+    setIsCreating(true);
+    const newProject = await apiCall('/projects', 'POST', { 
+      name: newProjectName,
+      description: newProjectDesc || "No description provided",
+      language: newProjectLang.name // <--- SEND LANGUAGE TO API
+    });
+    setShowCreateModal(false); 
+    navigate(`/code-editor/${newProject._id}`); 
+  } catch (error) {
+    toast.error("Error creating project: " + error.message);
+  } finally {
+    setIsCreating(false);
+  }
+};
+// 2. UPDATED HELPER: Get style based on language name instead of index
+const getProjectStyle = (languageName) => {
+  const found = LANGUAGE_OPTIONS.find(l => l.name === languageName);
+  // Fallback to the first option if language isn't found (or for old projects)
+  return found || LANGUAGE_OPTIONS[0];
+};
   const handleDeleteProject = async (e, projectId) => {
     e.stopPropagation();
     if (!window.confirm("Are you sure? This cannot be undone.")) return;
@@ -152,22 +169,11 @@ export default function Dashboard() {
         await apiCall(`/projects/${projectId}`, 'DELETE');
         setProjects(prev => prev.filter(p => (p._id || p.id) !== projectId));
     } catch (error) {
-        alert("Failed to delete project: " + error.message);
+        toast.error("Failed to delete project: " + error.message);
     }
     setActiveMenuId(null);
   };
 
-  // --- STYLING HELPERS ---
-  const getProjectStyle = (index) => {
-    const styles = [
-      { icon: Hash, color: 'text-green-500', bg: 'bg-green-500/10', lang: 'Node.js' },
-      { icon: Code2, color: 'text-blue-500', bg: 'bg-blue-500/10', lang: 'React' },
-      { icon: Cpu, color: 'text-yellow-500', bg: 'bg-yellow-500/10', lang: 'Python' },
-      { icon: Terminal, color: 'text-cyan-500', bg: 'bg-cyan-500/10', lang: 'Go' },
-      { icon: Zap, color: 'text-orange-500', bg: 'bg-orange-500/10', lang: 'Rust' },
-    ];
-    return styles[index % styles.length];
-  };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'Just now';
@@ -259,9 +265,9 @@ export default function Dashboard() {
           )}
 
           {!isLoading && displayedProjects.map((project, index) => {
-            const style = getProjectStyle(index);
-            const Icon = style.icon;
-            const projectId = project._id || project.id;
+const style = getProjectStyle(project.language); 
+  const Icon = style.icon;
+  const projectId = project._id || project.id;
             
             return (
               <div 
@@ -352,7 +358,7 @@ export default function Dashboard() {
         {/* Footer (Settings & Sign Out) - Now guaranteed to stay at bottom of viewport */}
         <div className={`p-4 border-t ${dashboardTheme.border} space-y-2`}>
           <NavItem icon={Settings} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} theme={dashboardTheme} />
-          <NavItem icon={LogOut} label="Sign Out" theme={dashboardTheme} />
+          <NavItem icon={LogOut} label="Sign Out" theme={dashboardTheme} onClick={logout} />
         </div>
       </aside>
 
@@ -411,41 +417,90 @@ export default function Dashboard() {
       </main>
 
       {/* CREATE MODAL */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`${dashboardTheme.sidebarBg} border ${dashboardTheme.border} p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-md`}>
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className={`text-xl font-bold ${dashboardTheme.text}`}>Create New Project</h3>
-                <p className={`text-xs ${dashboardTheme.textMuted} mt-1`}>Initialize a new workspace environment.</p>
-              </div>
-              <button onClick={() => setShowCreateModal(false)} className={`p-2 rounded-full hover:bg-zinc-500/10 ${dashboardTheme.textMuted}`}>
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <label className={`text-xs font-semibold uppercase tracking-wider ${dashboardTheme.textMuted} ml-1`}>Project Name</label>
-                <div className={`flex items-center px-4 py-3 rounded-xl border ${dashboardTheme.border} ${dashboardTheme.inputBg} focus-within:ring-2 ring-emerald-500/50`}>
-                  <Type className={`w-4 h-4 mr-3 ${dashboardTheme.textMuted}`} />
-                  <input type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="e.g. AI Chatbot" className={`flex-1 bg-transparent outline-none ${dashboardTheme.text}`} autoFocus />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className={`text-xs font-semibold uppercase tracking-wider ${dashboardTheme.textMuted} ml-1`}>Description</label>
-                <div className={`flex items-start px-4 py-3 rounded-xl border ${dashboardTheme.border} ${dashboardTheme.inputBg} focus-within:ring-2 ring-emerald-500/50`}>
-                  <FileText className={`w-4 h-4 mr-3 mt-1 ${dashboardTheme.textMuted}`} />
-                  <textarea value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} placeholder="Details..." rows="3" className={`flex-1 bg-transparent outline-none ${dashboardTheme.text} resize-none`} />
-                </div>
-              </div>
-              <button onClick={submitCreateProject} disabled={isCreating} className={`w-full ${dashboardTheme.accentBg} hover:bg-emerald-400 text-zinc-950 font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center mt-2`}>
-                {isCreating ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Plus className="w-5 h-5 mr-2" />}
-                {isCreating ? 'Creating Workspace...' : 'Create Project'}
-              </button>
-            </div>
+   {/* CREATE MODAL */}
+{showCreateModal && (
+  <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className={`${dashboardTheme.sidebarBg} border ${dashboardTheme.border} p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-md`}>
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h3 className={`text-xl font-bold ${dashboardTheme.text}`}>Create New Project</h3>
+          <p className={`text-xs ${dashboardTheme.textMuted} mt-1`}>Initialize a new workspace environment.</p>
+        </div>
+        <button onClick={() => setShowCreateModal(false)} className={`p-2 rounded-full hover:bg-zinc-500/10 ${dashboardTheme.textMuted}`}>
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      
+      <div className="space-y-5">
+        
+        {/* Project Name Input */}
+        <div className="space-y-2">
+          <label className={`text-xs font-semibold uppercase tracking-wider ${dashboardTheme.textMuted} ml-1`}>Project Name</label>
+          <div className={`flex items-center px-4 py-3 rounded-xl border ${dashboardTheme.border} ${dashboardTheme.inputBg} focus-within:ring-2 ring-emerald-500/50`}>
+            <Type className={`w-4 h-4 mr-3 ${dashboardTheme.textMuted}`} />
+            <input type="text" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="e.g. AI Chatbot" className={`flex-1 bg-transparent outline-none ${dashboardTheme.text}`} autoFocus />
           </div>
         </div>
-      )}
+
+        {/* --- NEW LANGUAGE DROPDOWN --- */}
+        <div className="space-y-2 relative">
+          <label className={`text-xs font-semibold uppercase tracking-wider ${dashboardTheme.textMuted} ml-1`}>Tech Stack</label>
+          <button 
+            onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border ${dashboardTheme.border} ${dashboardTheme.inputBg} hover:border-emerald-500/50 transition-colors`}
+          >
+            <div className="flex items-center">
+              <div className={`p-1.5 rounded-md ${newProjectLang.bg} ${newProjectLang.color} mr-3`}>
+                <newProjectLang.icon className="w-4 h-4" />
+              </div>
+              <span className={dashboardTheme.text}>{newProjectLang.name}</span>
+            </div>
+            <ChevronDown className={`w-4 h-4 ${dashboardTheme.textMuted} transition-transform ${isLangDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* Dropdown Menu */}
+          {isLangDropdownOpen && (
+            <div className={`absolute top-full left-0 right-0 mt-2 p-1 rounded-xl border ${dashboardTheme.border} ${dashboardTheme.cardBg} shadow-xl z-50 max-h-48 overflow-y-auto`}>
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.name}
+                  onClick={() => {
+                    setNewProjectLang(opt);
+                    setIsLangDropdownOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-zinc-800' : 'hover:bg-slate-100'}`}
+                >
+                  <div className="flex items-center">
+                    <div className={`p-1.5 rounded-md ${opt.bg} ${opt.color} mr-3`}>
+                      <opt.icon className="w-4 h-4" />
+                    </div>
+                    <span className={`text-sm ${dashboardTheme.text}`}>{opt.name}</span>
+                  </div>
+                  {newProjectLang.name === opt.name && <Check className="w-4 h-4 text-emerald-500" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* ----------------------------- */}
+
+        {/* Description Input */}
+        <div className="space-y-2">
+          <label className={`text-xs font-semibold uppercase tracking-wider ${dashboardTheme.textMuted} ml-1`}>Description</label>
+          <div className={`flex items-start px-4 py-3 rounded-xl border ${dashboardTheme.border} ${dashboardTheme.inputBg} focus-within:ring-2 ring-emerald-500/50`}>
+            <FileText className={`w-4 h-4 mr-3 mt-1 ${dashboardTheme.textMuted}`} />
+            <textarea value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} placeholder="Details..." rows="3" className={`flex-1 bg-transparent outline-none ${dashboardTheme.text} resize-none`} />
+          </div>
+        </div>
+
+        <button onClick={submitCreateProject} disabled={isCreating} className={`w-full ${dashboardTheme.accentBg} hover:bg-emerald-400 text-zinc-950 font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center mt-2 transition-all active:scale-95`}>
+          {isCreating ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Plus className="w-5 h-5 mr-2" />}
+          {isCreating ? 'Creating Workspace...' : 'Create Project'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }

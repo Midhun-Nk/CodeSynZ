@@ -4,6 +4,8 @@ import LoginPage from "./pages/Login";
 import CodeEditor from "./pages/CodeEditor";
 import OAuthSuccess from "./pages/OAuthSuccess";
 import { Toaster } from "./components/common/Toaster";
+import Demo from "./pages/Demo";
+import { useTheme } from "./context/ThemeContext";
 // --- Protected Route Component ---
 function ProtectedRoute({ children }) {
   const user = JSON.parse(localStorage.getItem("user"));
@@ -20,11 +22,12 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
-
 export default function App() {
+  const {darkMode} = useTheme();
+
   return (
     <div>
-
+  <Toaster darkMode={true} />
       <Routes>
         {/* Public Route */}
         <Route path="/login" element={<LoginPage />} />
@@ -48,10 +51,10 @@ export default function App() {
           } 
         />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
+<Route path="/demo" element={<Demo />} />
 
       </Routes>
-       <Toaster darkMode={false} />
-
+ 
     </div>
   );
 }

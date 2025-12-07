@@ -30,15 +30,15 @@ const userSchema = new mongoose.Schema(
 
 // --- THE MAGIC PART ---
 // Before saving, if profileImage is empty, generate one using UI Avatars
-userSchema.pre('save', function(next) {
+userSchema.pre("save", function () {
   if (!this.profileImage) {
-    // 1. Get the color without the '#' (e.g., "3b82f6")
-    const colorHex = this.avatarColor.replace('#', '');
-    
-    // 2. Generate the URL (e.g., Name="Rahul" -> "R")
-    this.profileImage = `https://ui-avatars.com/api/?name=${encodeURIComponent(this.username)}&background=${colorHex}&color=fff&size=200&bold=true`;
+    const colorHex = this.avatarColor.replace("#", "");
+
+    this.profileImage = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      this.username
+    )}&background=${colorHex}&color=fff&size=200&bold=true`;
   }
-  next();
 });
+
 
 export default mongoose.model("User", userSchema);

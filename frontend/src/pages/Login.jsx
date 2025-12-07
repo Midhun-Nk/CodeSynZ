@@ -19,6 +19,7 @@ import { useContext } from "react";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from '../context/ThemeContext';
+import { toast } from 'sonner';
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -87,17 +88,18 @@ const navigate = useNavigate();
     const res = await login(email, password);
     if (res.success) {
       navigate("/dashboard");
+      toast.success("Logged in successfully!");
     } else {
-      alert(res.message);
+      toast.error(res.message);
     }
   } else {
     // REGISTER
     const res = await register(username, email, password);
     if (res.success) {
-      alert("Account created! Please log in.");
+      toast.success("Account created! Please log in.");
       setIsLogin(true);
     } else {
-      alert(res.message);
+      toast.error(res.message);
     }
   }
 };

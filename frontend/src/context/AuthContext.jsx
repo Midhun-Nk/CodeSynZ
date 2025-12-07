@@ -1,11 +1,13 @@
 import { createContext, useState, useEffect } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 export const AuthContext = createContext();
 
 const API = "http://localhost:4000/api/auth";
 
 export default function AuthProvider({ children }) {
+  const navigate = useNavigate();
   const [user, setUser] = useState(() =>
     JSON.parse(localStorage.getItem("user")) || null
   );
@@ -123,6 +125,7 @@ useEffect(() => {
 
     localStorage.removeItem("user");
     localStorage.removeItem("token");
+    navigate("/login");
   };
 
   return (

@@ -4,7 +4,7 @@ import User from '../models/User.js';
 // --- 1. Create a New Project ---
 export const createProject = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description ,language} = req.body;
 
     if (!name || name.trim() === "") {
       return res.status(400).json({ message: "Project name is required" });
@@ -13,13 +13,15 @@ export const createProject = async (req, res) => {
     const project = await Project.create({
       name,
       description,
+      language,
       owner: req.user._id,
       collaborators: []
     });
 
     res.status(201).json({
-      id: project._id, // Standardize to 'id' for frontend
+      _id: project._id, // Standardize to 'id' for frontend
       name: project.name,
+      language: project.language,
       description: project.description
     });
 
@@ -36,7 +38,7 @@ export const getProjectDetails = async (req, res) => {
 
     // 1. Fetch Project with Access Requests Populated
     const project = await Project.findById(projectId)
-      .populate('owner', 'username email avatarColor')
+      .populate('owner', 'username email avatarColor ')
       .populate('collaborators.user', 'username email avatarColor')
       .populate('accessRequests.user', 'username email'); // <--- CRITICAL FIX
 
@@ -208,13 +210,14 @@ export const getAllProjects = async (req, res) => {
       ]
     })
     .sort({ updatedAt: -1 }) // Sort by newest first
-    .populate('owner', 'username email') 
-    .select('name description updatedAt owner collaborators'); // Select specific fields
+    .populate('owner', 'username email ') 
+    .select('name description updatedAt owner collaborators language'); // Select specific fields
 
     // Format for Frontend
     const formattedProjects = projects.map(p => ({
       _id: p._id,
       title: p.name,
+      language: p.language,
       description: p.description,
       updatedAt: p.updatedAt,
       isOwner: String(p.owner._id) === String(userId),

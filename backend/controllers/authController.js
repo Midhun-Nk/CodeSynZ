@@ -16,32 +16,32 @@ function createToken(user) {
 }
 
 // REGISTER
-export const register = async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
+// export const register = async (req, res) => {
+//   try {
+//     const { username, email, password } = req.body;
 
-    const existing = await User.findOne({ email });
-    if (existing)
-      return res.status(400).json({ message: "Email already exists" });
+//     const existing = await User.findOne({ email });
+//     if (existing)
+//       return res.status(400).json({ message: "Email already exists" });
 
-    const hashed = await bcrypt.hash(password, 10);
+//     const hashed = await bcrypt.hash(password, 10);
 
-    const newUser = await User.create({
-      username,
-      email,
-      password: hashed,
-      authProvider: "local",
-    });
+//     const newUser = await User.create({
+//       username,
+//       email,
+//       password: hashed,
+//       authProvider: "local",
+//     });
 
-    return res.json({
-      message: "Account created",
-      userId: newUser._id,
-    });
+//     return res.json({
+//       message: "Account created",
+//       userId: newUser._id,
+//     });
 
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-};
+//   } catch (err) {
+//     return res.status(500).json({ error: err.message });
+//   }
+// };
 
 // LOGIN
 export const login = async (req, res) => {
@@ -125,26 +125,35 @@ export const registerUser = async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // 1. Generate a random color for the background
+    const existing = await User.findOne({ email });
+    if (existing)
+      return res.status(400).json({ message: "Email already exists" });
+
+    const hashed = await bcrypt.hash(password, 10);
+
     const randomColor = getRandomColor();
 
-    // 2. Create the default profile image URL
-    // Format: https://ui-avatars.com/api/?name=USERNAME&background=COLOR&color=fff
-    const defaultImage = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=${randomColor}&color=fff&size=128&bold=true`;
+    const defaultImage = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      username
+    )}&background=${randomColor}&color=fff&size=128&bold=true`;
 
-    // 3. Create the user
     const newUser = new User({
       username,
       email,
-      password, // Remember to hash this password using bcrypt!
-      avatarColor: `#${randomColor}`, // Store color with # for frontend usage if needed
-      profileImage: defaultImage, // <--- SAVES THE GENERATED IMAGE URL
+      password: hashed, // ✅ FIXED
+      avatarColor: `#${randomColor}`,
+      profileImage: defaultImage,
+      authProvider: "local",
     });
 
     const savedUser = await newUser.save();
 
-    res.status(201).json(savedUser);
+    res.status(201).json({
+      message: "Account created",
+      userId: savedUser._id,
+    });
+
   } catch (err) {
-    res.status(500).json(err);
+    res.status(500).json({ error: err.message });
   }
 };

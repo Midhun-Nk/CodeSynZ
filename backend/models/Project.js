@@ -20,6 +20,11 @@ const projectSchema = new mongoose.Schema({
     required: true 
   },
 
+  language:{
+    type: String,
+    default: "javascript"
+  },
+
   // 2. COLLABORATORS: Users who accepted invites
   collaborators: [{
     user: { 

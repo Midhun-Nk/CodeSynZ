@@ -10,6 +10,14 @@ export function ThemeProvider({ children }) {
   const toggleTheme = () => {
     setDarkMode(!darkMode);
   };
+
+  useEffect(() => {
+  if (darkMode) {
+    document.documentElement.classList.add("dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+  }
+}, [darkMode]);
   // Dynamic classes based on theme
   const loginTheme = {
     bg: darkMode ? 'bg-zinc-950' : 'bg-zinc-50',
