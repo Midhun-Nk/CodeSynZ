@@ -58,6 +58,7 @@ import { io } from "socket.io-client";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { CodeContext } from "../context/CodeContext";
+import { useTheme } from "../context/ThemeContext";
 
 // --- CONFIG ---
 const SOCKET_URL = "http://localhost:4000";
@@ -99,7 +100,6 @@ export default function CodeEditor() {
   const navigate = useNavigate();
   const PROJECT_ID = projectId;
 
-  const [darkMode, setDarkMode] = useState(true);
 
   // -- Identity State --
   const [currentUser, setCurrentUser] = useState({
@@ -150,26 +150,10 @@ export default function CodeEditor() {
   const saveTimeoutRef = useRef(null);
   const isRemoteUpdate = useRef(false); // Prevents echo loop
   const lastCursorEmit = useRef(0); // For throttling cursor updates
-
-  // Theme configuration
-   // --- MODERN THEME PALETTE ---
-  const theme = {
-    bg: darkMode ? "bg-zinc-950/80" : "bg-zinc-50/80",
-    sidebarBg: darkMode ? "bg-zinc-900" : "bg-white",
-    activityBarBg: darkMode ? "bg-zinc-900" : "bg-gray-100",
-    text: darkMode ? "text-zinc-300" : "text-gray-700",
-    textActive: darkMode ? "text-white" : "text-black",
-    border: darkMode ? "border-zinc-800" : "border-gray-200",
-    tabActiveBg: darkMode ? "bg-zinc-950" : "bg-white",
-    tabInactiveBg: darkMode ? "bg-zinc-900/50" : "bg-gray-100",
-    inputBg: darkMode ? "bg-zinc-800" : "bg-white",
-    inputText: darkMode ? "text-white" : "text-black",
-    terminalBg: darkMode ? "bg-[#18181b]" : "bg-white",
-    hoverBg: darkMode ? "hover:bg-white/5" : "hover:bg-black/5",
-    accent: "text-emerald-500",
-  };
-
-  const toggleTheme = () => setDarkMode(!darkMode);
+ const {  darkMode,
+        toggleTheme,
+        CodeEditorTheme } = useTheme();
+ 
 
   // --------------------------------------------------------------------------
   // IDENTITY SETUP (Extract ID from Token)
@@ -472,7 +456,7 @@ export default function CodeEditor() {
   // --------------------------------------------------------------------------
   if (loading)
     return (
-      <div className={`h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}>
+      <div className={`h-screen flex items-center justify-center ${CodeEditorTheme.bg} ${CodeEditorTheme.text}`}>
         <div className="flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
             <p className="text-lg font-medium animate-pulse">Initializing Environment...</p>
@@ -484,10 +468,10 @@ export default function CodeEditor() {
   if (!isAuthorized) {
     return (
       <div
-        className={`h-screen flex flex-col items-center justify-center ${theme.bg} ${theme.text} animate-fade-in`}
+        className={`h-screen flex flex-col items-center justify-center ${CodeEditorTheme.bg} ${CodeEditorTheme.text} animate-fade-in`}
       >
         <div
-          className={`max-w-md w-full p-8 rounded-2xl border ${theme.border} ${theme.sidebarBg} shadow-2xl text-center`}
+          className={`max-w-md w-full p-8 rounded-2xl border ${CodeEditorTheme.border} ${CodeEditorTheme.sidebarBg} shadow-2xl text-center`}
         >
           <div className="mx-auto w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
             <Shield className="w-10 h-10 text-red-500" />
@@ -535,14 +519,14 @@ export default function CodeEditor() {
   }
 
   return (
-   <div className={`h-screen flex flex-col ${theme.bg} ${theme.text} overflow-hidden font-sans text-sm relative selection:bg-blue-500/30`}>
+   <div className={`h-screen flex flex-col ${CodeEditorTheme.bg} ${CodeEditorTheme.text} overflow-hidden font-sans text-sm relative selection:bg-blue-500/30`}>
       {/* Invite Modal */}
      {showInviteModal && (
            <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-             <div className={`${theme.sidebarBg} border ${theme.border} p-8 rounded-2xl shadow-2xl w-[28rem] animate-in fade-in zoom-in duration-200`}>
+             <div className={`${CodeEditorTheme.sidebarBg} border ${CodeEditorTheme.border} p-8 rounded-2xl shadow-2xl w-[28rem] animate-in fade-in zoom-in duration-200`}>
                <div className="flex justify-between items-center mb-6">
                  <div>
-                   <h3 className={`text-xl font-bold ${theme.textActive}`}>Invite Team Member</h3>
+                   <h3 className={`text-xl font-bold ${CodeEditorTheme.textActive}`}>Invite Team Member</h3>
                    <p className="text-xs opacity-60 mt-1">Collaborate in real-time with your team.</p>
                  </div>
                  <button onClick={() => setShowInviteModal(false)} className="p-2 rounded-full hover:bg-white/10 transition-colors">
@@ -553,24 +537,24 @@ export default function CodeEditor() {
                <div className="space-y-5">
                  <div className="space-y-2">
                    <label className="text-xs font-semibold uppercase tracking-wider opacity-60 ml-1">Email Address</label>
-                   <div className={`flex items-center px-4 py-3 rounded-xl border ${theme.border} ${theme.inputBg} focus-within:ring-2 ring-blue-500/50 transition-all`}>
+                   <div className={`flex items-center px-4 py-3 rounded-xl border ${CodeEditorTheme.border} ${CodeEditorTheme.inputBg} focus-within:ring-2 ring-blue-500/50 transition-all`}>
                      <Users className="w-4 h-4 mr-3 opacity-50" />
                      <input
                        type="email"
                        value={inviteEmail}
                        onChange={(e) => setInviteEmail(e.target.value)}
                        placeholder="developer@example.com"
-                       className={`flex-1 bg-transparent outline-none ${theme.inputText} placeholder:opacity-30`}
+                       className={`flex-1 bg-transparent outline-none ${CodeEditorTheme.inputText} placeholder:opacity-30`}
                      />
                    </div>
                  </div>
                  <div className="space-y-2">
                    <label className="text-xs font-semibold uppercase tracking-wider opacity-60 ml-1">Role Permission</label>
-                   <div className={`relative px-4 py-3 rounded-xl border ${theme.border} ${theme.inputBg} focus-within:ring-2 ring-blue-500/50`}>
+                   <div className={`relative px-4 py-3 rounded-xl border ${CodeEditorTheme.border} ${CodeEditorTheme.inputBg} focus-within:ring-2 ring-blue-500/50`}>
                      <select
                        value={inviteRole}
                        onChange={(e) => setInviteRole(e.target.value)}
-                       className={`w-full bg-transparent outline-none appearance-none ${theme.inputText}`}
+                       className={`w-full bg-transparent outline-none appearance-none ${CodeEditorTheme.inputText}`}
                      >
                        <option value="viewer">Viewer (Read Only)</option>
                        <option value="editor">Editor (Full Access)</option>
@@ -592,7 +576,7 @@ export default function CodeEditor() {
          )}
 
       {/* Top Bar */}
-       <div className={`h-16 border-b ${theme.border} ${theme.sidebarBg} flex items-center justify-between px-6 select-none relative z-20 shadow-sm`}>
+       <div className={`h-16 border-b ${CodeEditorTheme.border} ${CodeEditorTheme.sidebarBg} flex items-center justify-between px-6 select-none relative z-20 shadow-sm`}>
              
              {/* Left: Brand & Menu */}
              <div className="flex items-center space-x-6">
@@ -616,7 +600,7 @@ export default function CodeEditor() {
      
              {/* Center: Search / File Name */}
              <div className="absolute left-1/2 transform -translate-x-1/2 hidden lg:flex items-center justify-center w-1/3">
-                  <div className={`flex items-center w-full max-w-md px-4 py-2 rounded-xl border ${theme.border} ${theme.inputBg} opacity-80 hover:opacity-100 transition-all group`}>
+                  <div className={`flex items-center w-full max-w-md px-4 py-2 rounded-xl border ${CodeEditorTheme.border} ${CodeEditorTheme.inputBg} opacity-80 hover:opacity-100 transition-all group`}>
                      <Search className="w-4 h-4 opacity-40 group-hover:text-blue-400 transition-colors mr-3" />
                      <span className="text-sm opacity-50 flex-1 truncate text-center">
                          {activeFile ? activeFile.name : "Search files (Ctrl+P)"}
@@ -665,7 +649,7 @@ export default function CodeEditor() {
                       </button>
                   </div>
                   
-                  {/* Theme Toggle */}
+                  {/* CodeEditorTheme Toggle */}
                   <button onClick={toggleTheme} className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/5 hover:bg-white/10 transition-colors border border-white/5">
                      {darkMode ? <Sun className="w-5 h-5 text-amber-300" /> : <Moon className="w-5 h-5 text-indigo-500" />}
                   </button>
@@ -675,42 +659,42 @@ export default function CodeEditor() {
       <div className="flex-1 flex overflow-hidden">
         {/* Activity Bar */}
          <div
-                  className={`w-16 border-r ${theme.border} ${theme.activityBarBg} flex flex-col items-center py-6 gap-4 z-10`}
+                  className={`w-16 border-r ${CodeEditorTheme.border} ${CodeEditorTheme.activityBarBg} flex flex-col items-center py-6 gap-4 z-10`}
                 >
                   <ActivityIcon
                     icon={FileCode}
                     active={sidebarView === "explorer"}
                     onClick={() => setSidebarView("explorer")}
-                    theme={theme}
+                    theme={CodeEditorTheme}
                   />
                   <ActivityIcon
                     icon={Search}
                     active={sidebarView === "search"}
                     onClick={() => setSidebarView("search")}
-                    theme={theme}
+                    theme={CodeEditorTheme}
                   />
                   <ActivityIcon
                     icon={GitBranch}
                     active={sidebarView === "git"}
                     onClick={() => setSidebarView("git")}
-                    theme={theme}
+                    theme={CodeEditorTheme}
                   />
                   <ActivityIcon
                     icon={Users}
                     active={sidebarView === "collab"}
                     onClick={() => setSidebarView("collab")}
                     notification={pendingInvites.length + accessRequests.length}
-                    theme={theme}
+                    theme={CodeEditorTheme}
                   />
                   <div className="flex-1" />
-                  <ActivityIcon icon={Settings} theme={theme} />
+                  <ActivityIcon icon={Settings} theme={CodeEditorTheme} />
                   <div className="w-8 h-8 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs mt-2 cursor-pointer shadow-md">
                     {currentUser.name[0]}
                   </div>
                 </div>
         {/* Sidebar Content */}
         <div
-          className={`w-72 border-r ${theme.border} ${theme.sidebarBg} flex flex-col transition-all duration-300`}
+          className={`w-72 border-r ${CodeEditorTheme.border} ${CodeEditorTheme.sidebarBg} flex flex-col transition-all duration-300`}
         >
          {sidebarView === "explorer" && (
                      <>
@@ -786,7 +770,7 @@ export default function CodeEditor() {
                              )
                            }
                            setEditingId={setEditingId}
-                           theme={theme}
+                           theme={CodeEditorTheme}
                          />
                        </div>
                      </>
@@ -1040,7 +1024,7 @@ export default function CodeEditor() {
           <div className="flex-1 flex flex-col min-w-0 bg-transparent relative overflow-hidden">
                  {/* Editor Tabs (Visual Studio Code Style) */}
                  <div
-                   className={`flex items-end ${theme.activityBarBg} h-10 flex-shrink-0 select-none`}
+                   className={`flex items-end ${CodeEditorTheme.activityBarBg} h-10 flex-shrink-0 select-none`}
                  >
                    {openFiles.map((fileId) => {
                      const file = findFileById(files, fileId);
@@ -1050,7 +1034,7 @@ export default function CodeEditor() {
                          key={file.id}
                          name={file.name}
                          active={activeFileId === file.id}
-                         theme={theme}
+                         theme={CodeEditorTheme}
                          onClick={() => handleTabClick(file.id)}
                          onClose={(e) => handleCloseTab(e, file.id)}
                        />
@@ -1060,7 +1044,7 @@ export default function CodeEditor() {
        
                  {/* Breadcrumbs & Actions Bar */}
                  <div
-                   className={`h-8 border-b ${theme.border} ${theme.bg} flex items-center px-4 justify-between text-xs`}
+                   className={`h-8 border-b ${CodeEditorTheme.border} ${CodeEditorTheme.bg} flex items-center px-4 justify-between text-xs`}
                  >
                    <div className="flex items-center gap-2 opacity-60 hover:opacity-100 transition-opacity cursor-pointer">
                      <span>{projectId}</span>
@@ -1093,7 +1077,7 @@ export default function CodeEditor() {
                        <div className="flex-1 relative h-full">
                          <EditorArea
                            key={activeFile.id}
-                           theme={theme}
+                           theme={CodeEditorTheme}
                            darkMode={darkMode}
                            code={activeFile.content}
                            onChange={handleCodeChange}
@@ -1120,7 +1104,7 @@ export default function CodeEditor() {
                          })}
                        </div>
                        {/* Modern Minimap */}
-                       <Minimap theme={theme} code={activeFile.content} />
+                       <Minimap theme={CodeEditorTheme} code={activeFile.content} />
                      </>
                    ) : (
                      <div className="flex-1 flex flex-col items-center justify-center opacity-40 select-none">
@@ -1150,7 +1134,7 @@ export default function CodeEditor() {
                  {/* Terminal Panel (Collapsible) */}
                  {showTerminal && (
                    <div
-                     className={`h-64 border-t ${theme.border} ${theme.terminalBg} flex flex-col font-mono text-xs flex-shrink-0 animate-in slide-in-from-bottom duration-200`}
+                     className={`h-64 border-t ${CodeEditorTheme.border} ${CodeEditorTheme.terminalBg} flex flex-col font-mono text-xs flex-shrink-0 animate-in slide-in-from-bottom duration-200`}
                    >
                      <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-white/5">
                        <div className="flex space-x-4">
@@ -1240,231 +1224,6 @@ export default function CodeEditor() {
   );
 }
 
-// ... (Sub-Components remain exactly as provided in previous snippets: FileTree, EditorArea, Minimap, ActivityIcon, Tab, getFileIcon, etc.)
-// function FileTree({
-//   items,
-//   level = 0,
-//   activeId,
-//   selectedId,
-//   editingId,
-//   collaborators = [],
-//   onToggle,
-//   onSelect,
-//   onRename,
-//   onDelete,
-//   setEditingId,
-//   theme,
-// }) {
-//   return items.map((item) => {
-//     const activeUsersHere = collaborators.filter((c) => c.fileId === item.id);
-//     return (
-//       <div key={item.id}>
-//         <div
-//           className={`flex items-center py-1 px-2 cursor-pointer transition-colors text-xs select-none border-l-2 group ${
-//             item.id === selectedId ? "bg-blue-500/20" : "hover:bg-gray-500/10"
-//           } ${
-//             item.id === activeId
-//               ? "text-blue-400 border-blue-400"
-//               : "border-transparent"
-//           }`}
-//           style={{ paddingLeft: `${level * 12 + 12}px` }}
-//           onClick={() => {
-//             if (item.type === "folder") {
-//               onToggle(item.id);
-//               onSelect(item.id, "folder");
-//             } else {
-//               onSelect(item.id, "file");
-//             }
-//           }}
-//         >
-//           <span className="mr-1.5 opacity-70">
-//             {item.type === "folder" ? (
-//               item.isOpen ? (
-//                 <ChevronDown className="w-3.5 h-3.5" />
-//               ) : (
-//                 <ChevronRight className="w-3.5 h-3.5" />
-//               )
-//             ) : (
-//               getFileIcon(item.name)
-//             )}
-//           </span>
-//           {editingId === item.id ? (
-//             <input
-//               autoFocus
-//               className={`${theme.inputBg} ${theme.inputText} border border-blue-500 rounded px-1 outline-none w-full h-5`}
-//               defaultValue={item.name}
-//               onClick={(e) => e.stopPropagation()}
-//               onKeyDown={(e) => {
-//                 if (e.key === "Enter") onRename(item.id, e.currentTarget.value);
-//                 if (e.key === "Escape") setEditingId(null);
-//               }}
-//               onBlur={(e) => onRename(item.id, e.currentTarget.value)}
-//             />
-//           ) : (
-//             <div className="flex-1 flex justify-between items-center overflow-hidden">
-//               <span className="truncate flex items-center">
-//                 {item.name || "Untitled"}{" "}
-//                 {activeUsersHere.length > 0 && (
-//                   <div className="flex -space-x-1 ml-2">
-//                     {activeUsersHere.map((u) => (
-//                       <div
-//                         key={u.id}
-//                         className="w-2 h-2 rounded-full border border-black"
-//                         style={{ backgroundColor: u.color }}
-//                       />
-//                     ))}
-//                   </div>
-//                 )}
-//               </span>
-//               <div className="hidden group-hover:flex items-center space-x-1 mr-1">
-//                 <button
-//                   className="hover:text-blue-400 p-0.5"
-//                   onClick={(e) => {
-//                     e.stopPropagation();
-//                     setEditingId(item.id);
-//                   }}
-//                 >
-//                   <Edit2 className="w-3 h-3" />
-//                 </button>
-//                 <button
-//                   className="hover:text-red-400 p-0.5"
-//                   onClick={(e) => onDelete(e, item.id)}
-//                 >
-//                   <Trash2 className="w-3 h-3" />
-//                 </button>
-//               </div>
-//             </div>
-//           )}
-//         </div>
-//         {item.type === "folder" && item.isOpen && item.children && (
-//           <FileTree
-//             items={item.children}
-//             level={level + 1}
-//             activeId={activeId}
-//             selectedId={selectedId}
-//             editingId={editingId}
-//             collaborators={collaborators}
-//             onToggle={onToggle}
-//             onSelect={onSelect}
-//             onRename={onRename}
-//             onDelete={onDelete}
-//             setEditingId={setEditingId}
-//             theme={theme}
-//           />
-//         )}
-//       </div>
-//     );
-//   });
-// }
-// function EditorArea({ theme, darkMode, code, onChange, onCursorChange }) {
-//   const handleChange = React.useCallback(
-//     (val) => {
-//       onChange(val);
-//     },
-//     [onChange]
-//   );
-//   const handleUpdate = React.useCallback(
-//     (viewUpdate) => {
-//       if (viewUpdate.selectionSet) {
-//         const pos = viewUpdate.state.selection.main.head;
-//         const lineObj = viewUpdate.state.doc.lineAt(pos);
-//         if (onCursorChange)
-//           onCursorChange({ line: lineObj.number - 1, col: pos - lineObj.from });
-//       }
-//     },
-//     [onCursorChange]
-//   );
-//   return (
-//     <div className={`relative h-full overflow-hidden font-mono text-sm`}>
-//       <CodeMirror
-//         value={code}
-//         height="100%"
-//         theme={darkMode ? githubDarkTheme : "light"}
-//         extensions={[javascript({ jsx: true }), python()]}
-//         onChange={handleChange}
-//         onUpdate={handleUpdate}
-//         className="h-full"
-//       />
-//     </div>
-//   );
-// }
-// function Minimap({ theme, code }) {
-//   return (
-//     <div
-//       className={`w-16 border-l ${theme.border} ${theme.bg} opacity-50 hidden md:block select-none overflow-hidden relative`}
-//     >
-//       <div className="text-[2px] leading-[3px] p-1 text-gray-500 font-mono whitespace-pre text-left break-all">
-//         {code}
-//       </div>
-//     </div>
-//   );
-// }
-// function ActivityIcon({ icon: Icon, active, notification, onClick }) {
-//   return (
-//     <button
-//       onClick={onClick}
-//       className={`p-3 relative group transition-colors mb-2 ${
-//         active ? "text-white" : "text-gray-500 hover:text-gray-300"
-//       }`}
-//     >
-//       <Icon className="w-6 h-6" strokeWidth={1.5} />
-//       {active && (
-//         <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />
-//       )}
-//       {notification > 0 && (
-//         <div className="absolute top-2 right-2 w-4 h-4 bg-blue-600 rounded-full text-[10px] flex items-center justify-center text-white border border-[#0d1117]">
-//           {notification}
-//         </div>
-//       )}
-//     </button>
-//   );
-// }
-// function Tab({ name, active, theme, icon: Icon, color, onClick, onClose }) {
-//   return (
-//     <div
-//       onClick={onClick}
-//       className={`flex items-center px-3 h-full min-w-[120px] max-w-[180px] border-r ${
-//         theme.border
-//       } text-xs cursor-pointer group select-none relative ${
-//         active
-//           ? `${theme.tabActiveBg} ${theme.textActive} border-t-2 border-t-blue-500`
-//           : `${theme.tabInactiveBg} opacity-70 hover:opacity-100 hover:bg-gray-800/50`
-//       }`}
-//     >
-//       {Icon && <Icon className={`w-3.5 h-3.5 mr-2 ${color}`} />}
-//       <span className="truncate flex-1 mr-2">{name}</span>
-//       <button
-//         onClick={onClose}
-//         className={`opacity-0 group-hover:opacity-100 rounded p-0.5 hover:bg-gray-500/20 transition-all ${
-//           active ? "text-white" : ""
-//         }`}
-//       >
-//         <X className="w-3 h-3" />
-//       </button>
-//     </div>
-//   );
-// }
-const getFileIcon = (name) => {
-  if (name.endsWith(".jsx") || name.endsWith(".js"))
-    return <FileCode className="w-3.5 h-3.5 text-yellow-400" />;
-  if (name.endsWith(".css"))
-    return <Hash className="w-3.5 h-3.5 text-blue-400" />;
-  if (name.endsWith(".json"))
-    return <FileJson className="w-3.5 h-3.5 text-orange-400" />;
-  return <File className="w-3.5 h-3.5 text-gray-400" />;
-};
-const getFileIconIcon = (name) => {
-  if (name.endsWith(".jsx") || name.endsWith(".js")) return FileCode;
-  if (name.endsWith(".css")) return Hash;
-  if (name.endsWith(".json")) return FileJson;
-  return File;
-};
-const getFileIconColor = (name) => {
-  if (name.endsWith(".jsx") || name.endsWith(".js")) return "text-yellow-400";
-  if (name.endsWith(".css")) return "text-blue-400";
-  if (name.endsWith(".json")) return "text-orange-400";
-  return "text-gray-400";
-};
 
 
 function ActivityIcon({ icon: Icon, active, notification, onClick, theme }) {

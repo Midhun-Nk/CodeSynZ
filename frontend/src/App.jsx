@@ -3,7 +3,7 @@ import Dashboard from "./pages/Dashboard";
 import LoginPage from "./pages/Login";
 import CodeEditor from "./pages/CodeEditor";
 import OAuthSuccess from "./pages/OAuthSuccess";
-
+import { Toaster } from "./components/common/Toaster";
 // --- Protected Route Component ---
 function ProtectedRoute({ children }) {
   const user = JSON.parse(localStorage.getItem("user"));
@@ -50,6 +50,7 @@ export default function App() {
           <Route path="/oauth-success" element={<OAuthSuccess />} />
 
       </Routes>
+       <Toaster darkMode={false} />
 
     </div>
   );
