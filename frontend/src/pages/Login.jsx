@@ -87,7 +87,7 @@ const navigate = useNavigate();
     // LOGIN
     const res = await login(email, password);
     if (res.success) {
-      navigate("/dashboard");
+      navigate("/");
       toast.success("Logged in successfully!");
     } else {
       toast.error(res.message);
