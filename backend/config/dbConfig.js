@@ -4,9 +4,9 @@ dotenv.config();
 
 const MONGO_URI = process.env.MONGO_URL;
 
-const dbConfig = () => mongoose.connect(MONGO_URI)
+const dbconfig = () => mongoose.connect(MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
   .catch(err => console.log(err));
 
 
-export default dbConfig;
+export default dbconfig;

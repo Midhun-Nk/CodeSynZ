@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 
 // init DB + models + passport
-import dbConfig from './config/dbconfig.js';
+import dbconfig from './config/dbconfig.js';
 import initPassport from './config/passport.js';
 import Project from './models/Project.js';
 
@@ -45,7 +45,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
-dbConfig();
+dbconfig();
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'SESSION_SECRET',
