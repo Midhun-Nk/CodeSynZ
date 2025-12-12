@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 
 // init DB + models + passport
-import dbconfig from './config/dbconfig.js';
+import dbconfig from './config/dbConfig.js';
 import initPassport from './config/passport.js';
 import Project from './models/Project.js';
 
