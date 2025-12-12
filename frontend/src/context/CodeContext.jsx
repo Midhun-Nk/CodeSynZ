@@ -301,47 +301,54 @@ export const CodeProvider = ({ children }) => {
     return map;
   };
 
-
-  const runProject = async (
-    files, activeFile, setIsRunning, setShowTerminal, setTerminalOutput,
+const runProject = async (
+    fileMap,       // Received as Flat Object from CodeEditor
+    entryPath,     // Received as String ("src/index.js") from CodeEditor
+    setIsRunning, 
+    setShowTerminal, 
+    setTerminalOutput
   ) => {
     setIsRunning(true);
     setShowTerminal(true);
     setTerminalOutput((prev) => [
       ...prev,
       { type: "info", content: `> Compiling Project...` },
+      { type: "info", content: `> Entry Point: ${entryPath}` }, // Visual feedback
     ]);
-    const allFiles = getAllFiles(files);
+
     try {
+      // We pass the data directly. No need to transform it again here.
       const data = await apiCall("/compiler/run-project", "POST", {
-        files: allFiles,
-        entryFile: activeFile ? activeFile.name : Object.keys(allFiles)[0],
+        files: fileMap,
+        entryFile: entryPath, 
       });
-      if (data.output)
+
+      if (data.output) {
         setTerminalOutput((prev) => [
           ...prev,
           { type: "success", content: data.output },
         ]);
-      else if (data.error)
+      } else if (data.error) {
         setTerminalOutput((prev) => [
           ...prev,
           { type: "error", content: `Error: ${data.error}` },
         ]);
-      else
+      } else {
         setTerminalOutput((prev) => [
           ...prev,
           { type: "info", content: "Project finished." },
         ]);
+      }
     } catch (error) {
+      console.error("Run Project Error:", error);
       setTerminalOutput((prev) => [
         ...prev,
-        { type: "error", content: `Failed: ${error.message}` },
+        { type: "error", content: `Failed: ${error.message || "Unknown error"}` },
       ]);
+    } finally {
+      setIsRunning(false);
     }
-    setIsRunning(false);
   };
-
-
    const handleDelete = async (e, id, PROJECT_ID, files, setFiles, activeFileId, handleCloseTab, openFiles, setOpenFiles) => {
     e.stopPropagation();
     if (!window.confirm("Delete this item?")) return;

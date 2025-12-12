@@ -418,6 +418,42 @@ export default function CodeEditor() {
     setFiles((prev) => toggleRecursive(prev));
   };
 
+// --- HELPER: Convert Tree to Flat Map for Backend ---
+  // Input: Array Tree
+  // Output: { "src/main.js": "console.log()", "utils.js": "..." }
+  const generateFileMap = (items, prefix = "") => {
+    let fileMap = {};
+    items.forEach((item) => {
+      // Build the path (e.g., "src/components/Button.js")
+      const path = prefix ? `${prefix}/${item.name}` : item.name;
+      
+      if (item.type === "folder") {
+        // Recursively flatten children
+        const childrenMap = generateFileMap(item.children || [], path);
+        fileMap = { ...fileMap, ...childrenMap };
+      } else {
+        // It's a file, map Path -> Content
+        fileMap[path] = item.content || "";
+      }
+    });
+    return fileMap;
+  };
+
+  // --- HELPER: Find Path of the Active File ---
+  // We need to tell the backend which file is the "entry point" by path string
+  const getActiveFilePath = (items, targetId, prefix = "") => {
+    for (const item of items) {
+      const path = prefix ? `${prefix}/${item.name}` : item.name;
+      if (item.id === targetId) return path;
+      
+      if (item.type === "folder" && item.children) {
+        const found = getActiveFilePath(item.children, targetId, path);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
   const handleCreateItem = (type) => {
     const tempId = "temp_" + Date.now();
     setCreatingType(type);
@@ -625,8 +661,23 @@ export default function CodeEditor() {
                      </button>
                      <div className="w-px h-4 bg-white/10 mx-1"></div>
                      <button
-                         onClick={(e) => runProject(files, activeFile, setIsRunning, setShowTerminal, setTerminalOutput)}
-                         disabled={isRunning}
+                    onClick={(e) => {
+    // SAFETY CHECK: Ensure a file is selected
+    if (!activeFile) {
+        setShowTerminal(true);
+        setTerminalOutput([{ type: "error", content: "Please select a file to run as the entry point." }]);
+        return;
+    }
+
+    // 1. Convert Tree to Flat Map
+    const flatFileMap = generateFileMap(files);
+    
+    // 2. Get the specific path string for the entry file
+    const entryPath = getActiveFilePath(files, activeFile.id);
+
+    // 3. Send transformed data
+    runProject(flatFileMap, entryPath, setIsRunning, setShowTerminal, setTerminalOutput);
+  }}                   disabled={isRunning}
                          className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
                      >
                          <Package className="w-3.5 h-3.5" />

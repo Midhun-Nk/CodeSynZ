@@ -35,10 +35,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 
-const FRONTEND_URL = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+// const "*" = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: "*",
   credentials: true,
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -123,7 +123,7 @@ app.post('/api/compiler/run-project', auth, rateLimiter, async (req, res) => {
 // ---------------------------------------------------------
 const io = new Server(server, {
   cors: {
-    origin: FRONTEND_URL,
+    origin: "*",
     methods: ["GET", "POST"],
     credentials: true
   }
