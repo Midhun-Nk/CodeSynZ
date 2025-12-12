@@ -1,1403 +1,347 @@
-import React, {
-  useState,
-  useCallback,
-  useEffect,
-  useRef,
-  useContext,
-} from "react";
-import {
-  Search,
-  Settings,
-  MoreVertical,
-  Code2,
-  GitBranch,
-  Zap,
-  FileCode,
-  File,
-  FileJson,
-  ChevronRight,
-  ChevronDown,
-  X,
-  FolderPlus,
-  FilePlus,
-  Menu,
-  Sun,
-  Moon,
-  Hash,
-  Terminal as TerminalIcon,
-  Layout,
-  Bell,
-  AlertCircle,
-  AlertTriangle,
-  Edit2,
-  Trash2,
-  Users,
-  UserPlus,
-  Check,
-  Ban,
-  MousePointer2,
-  Share2,
-  Play,
-  Loader2,
-  LogOut,
-  Package,
-  Shield,
-  UserMinus,
-  MoreHorizontal,
-  CheckCircle2,
-} from "lucide-react";
-import CodeMirror from "@uiw/react-codemirror";
-import { javascript } from "@codemirror/lang-javascript";
-import { python } from "@codemirror/lang-python";
-import { EditorView } from "@codemirror/view";
-import { io } from "socket.io-client";
-import { useParams, useNavigate } from "react-router-dom";
-import axios from "axios";
-import { CodeContext } from "../context/CodeContext";
-
-// --- CONFIG ---
-const API_URL = "http://localhost:4000/api";
-const SOCKET_URL = "http://localhost:4000";
-
-// --- THEME DEFINITION ---
-const githubDarkTheme = EditorView.theme(
-  {
-    "&": { color: "#c9d1d9", backgroundColor: "#0d1117" },
-    ".cm-content": { caretColor: "#c9d1d9" },
-    "&.cm-focused .cm-cursor": { borderLeftColor: "#c9d1d9" },
-    "&.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "#163356",
-    },
-    ".cm-gutters": {
-      backgroundColor: "#0d1117",
-      color: "#8b949e",
-      borderRight: "1px solid #30363d",
-    },
-    ".cm-activeLineGutter": { backgroundColor: "#163356" },
-  },
-  { dark: true }
-);
-
-export default function CodeEditor() {
-  const {
-    apiCall,
-    handleSendInvite,
-    handleRequestAccess,
-    handleAccessRequestAction,
-    handleLeaveProject,
-    handleRemoveMember,
-    handleRoleChange,
-    handleRename,
-    handleDelete,runProject,runCode,getAllFiles
-  } = useContext(CodeContext);
-  const { projectId } = useParams();
-  const navigate = useNavigate();
-  const PROJECT_ID = projectId;
-
-  const [darkMode, setDarkMode] = useState(true);
-
-  // -- Identity State --
-  const [currentUser, setCurrentUser] = useState({
-    name: "Loading...",
-    color: "#888",
-  });
-  const [currentUserId, setCurrentUserId] = useState(null);
-
-  // -- File System State --
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  // -- Navigation State --
-  const [activeFileId, setActiveFileId] = useState(null);
-  const [openFiles, setOpenFiles] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [sidebarView, setSidebarView] = useState("explorer");
-  const [editingId, setEditingId] = useState(null);
-  const [creatingType, setCreatingType] = useState(null);
-
-  // -- Access Control State --
-  const [isAuthorized, setIsAuthorized] = useState(true);
-  const [isRequestingAccess, setIsRequestingAccess] = useState(false);
-  const [accessRequestSent, setAccessRequestSent] = useState(false);
-  const [amIOwner, setAmIOwner] = useState(false);
-
-  // -- Terminal / Execution State --
-  const [showTerminal, setShowTerminal] = useState(false);
-  const [terminalOutput, setTerminalOutput] = useState([
-    { type: "info", content: "SyncCode Terminal v1.0.0" },
-    { type: "info", content: "Connecting to server..." },
-  ]);
-  const [isRunning, setIsRunning] = useState(false);
-
-  // -- Collaboration State --
-  const [onlineUsers, setOnlineUsers] = useState([]);
-  const [projectMembers, setProjectMembers] = useState([]);
-  const [pendingInvites, setPendingInvites] = useState([]);
-  const [accessRequests, setAccessRequests] = useState([]);
-
-  // -- Invite Modal State --
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("viewer");
-  const [isInviting, setIsInviting] = useState(false);
-
-  const socketRef = useRef(null);
-  const saveTimeoutRef = useRef(null);
-  const isRemoteUpdate = useRef(false); // Prevents echo loop
-  const lastCursorEmit = useRef(0); // For throttling cursor updates
-
-  // Theme configuration
-  const theme = {
-    bg: darkMode ? "bg-[#0d1117]" : "bg-gray-50",
-    sidebarBg: darkMode ? "bg-[#010409]" : "bg-white",
-    activityBarBg: darkMode ? "bg-[#0d1117]" : "bg-gray-100",
-    text: darkMode ? "text-gray-300" : "text-gray-700",
-    textActive: darkMode ? "text-white" : "text-black",
-    border: darkMode ? "border-[#30363d]" : "border-gray-200",
-    tabActiveBg: darkMode ? "bg-[#0d1117]" : "bg-white",
-    tabInactiveBg: darkMode ? "bg-[#010409]" : "bg-gray-100",
-    inputBg: darkMode ? "bg-zinc-800" : "bg-white",
-    inputText: darkMode ? "text-white" : "text-black",
-    terminalBg: darkMode ? "bg-[#0d1117]" : "bg-white",
-  };
-
-  const toggleTheme = () => setDarkMode(!darkMode);
-
-  // --------------------------------------------------------------------------
-  // IDENTITY SETUP (Extract ID from Token)
-  // --------------------------------------------------------------------------
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        setCurrentUserId(payload.id || payload._id);
-        setCurrentUser((prev) => ({
-          ...prev,
-          name: payload.username || "User",
-        }));
-      } catch (e) {
-        console.error("Invalid token");
-      }
-    }
-  }, []);
-
-  // -- Helpers --
-  const findFileById = (list, id) => {
-    for (const item of list) {
-      if (item.id === id) return item;
-      if (item.children) {
-        const found = findFileById(item.children, id);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
-
-  // --------------------------------------------------------------------------
-  // INITIAL LOAD & SOCKET
-  // --------------------------------------------------------------------------
-  // --- INITIAL DATA FETCH & SOCKET ---
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const fileTree = await apiCall(`/projects/${PROJECT_ID}/files`);
-        setFiles(fileTree);
-        setLoading(false);
-
-        const project = await apiCall(`/projects/${PROJECT_ID}`);
-        setAmIOwner(String(project.owner._id) === String(currentUserId));
-
-        const membersList = [
-          {
-            id: project.owner._id,
-            name: project.owner.username,
-            email: project.owner.email,
-            role: "owner",
-            color: project.owner.avatarColor,
-          },
-        ];
-        if (project.collaborators) {
-          project.collaborators.forEach((c) => {
-            membersList.push({
-              id: c.id,
-              name: c.name,
-              email: c.email,
-              role: c.role,
-              color: c.color,
-            });
-          });
-        }
-        setProjectMembers(membersList);
-
-        if (project.invitations)
-          setPendingInvites(
-            project.invitations.map((inv, idx) => ({
-              id: inv._id || idx,
-              email: inv.email,
-              role: inv.role,
-            }))
-          );
-        if (project.accessRequests) setAccessRequests(project.accessRequests);
-      } catch (err) {
-        if (err.message.toLowerCase().includes("access denied")) {
-          setIsAuthorized(false);
-          setLoading(false);
-          return;
-        }
-        console.error("Load error", err);
-        setLoading(false);
-      }
-    };
-
-    if (currentUserId) init();
-
-    // SOCKET SETUP
-    const token = localStorage.getItem("token");
-    socketRef.current = io(SOCKET_URL, {
-      auth: { token },
-      transports: ["websocket"],
-    });
-    const socket = socketRef.current;
-
-    socket.on("connect", () => {
-      socket.emit("join-room", {
-        roomId: PROJECT_ID,
-        userName: currentUser.name,
-        color: currentUser.color,
-      });
-    });
-
-    // GLITCH FIX: Handle Code Updates safely
-    socket.on("code-update", ({ fileId, code }) => {
-      // 1. Mark this as a remote update so onChange doesn't echo it back
-      if (fileId === activeFileId) {
-        isRemoteUpdate.current = true;
-      }
-
-      setFiles((prev) => {
-        const updateRecursive = (list) =>
-          list.map((item) => {
-            if (item.id === fileId) return { ...item, content: code };
-            if (item.children)
-              return { ...item, children: updateRecursive(item.children) };
-            return item;
-          });
-        return updateRecursive(prev);
-      });
-    });
-
-    socket.on("cursor-update", ({ id, cursor, fileId }) => {
-      if (id === socket.id) return; // Don't track own cursor from server
-      setOnlineUsers((prev) => {
-        const exists = prev.find((u) => u.id === id);
-        if (exists)
-          return prev.map((u) => (u.id === id ? { ...u, cursor, fileId } : u));
-        return prev; // Wait for join event to add user
-      });
-    });
-
-    socket.on("user-joined", (user) => {
-      setOnlineUsers((prev) => {
-        if (prev.find((u) => u.id === user.id)) return prev;
-        return [...prev, user];
-      });
-      setTerminalOutput((prev) => [
-        ...prev,
-        { type: "info", content: `> ${user.name} joined.` },
-      ]);
-    });
-
-    socket.on("sync-users", (users) => {
-      // Filter out self from online users to avoid drawing own cursor
-      setOnlineUsers(users.filter((u) => u.id !== socket.id));
-    });
-
-    socket.on("user-left", (socketId) => {
-      setOnlineUsers((prev) => prev.filter((u) => u.id !== socketId));
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [currentUser, PROJECT_ID, currentUserId, activeFileId]);
-
-  // --- HANDLERS ---
-
-  // GLITCH FIX: Throttle Cursor & Prevent Echo Loop
-  const handleCodeChange = useCallback(
-    (newContent) => {
-      // 1. If this change came from the server (remote), ignore emitting
-      if (isRemoteUpdate.current) {
-        isRemoteUpdate.current = false;
-        return;
-      }
-
-      // 2. Update Local State
-      const updateContentRecursive = (list) =>
-        list.map((item) => {
-          if (item.id === activeFileId) return { ...item, content: newContent };
-          if (item.children)
-            return { ...item, children: updateContentRecursive(item.children) };
-          return item;
-        });
-      setFiles((prev) => updateContentRecursive(prev));
-
-      // 3. Emit to Server
-      if (socketRef.current)
-        socketRef.current.emit("code-change", {
-          roomId: PROJECT_ID,
-          fileId: activeFileId,
-          code: newContent,
-        });
-
-      // 4. Debounce DB Save
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(async () => {
-        try {
-          await apiCall(
-            `/projects/${PROJECT_ID}/files/${activeFileId}/content`,
-            "PUT",
-            { content: newContent }
-          );
-        } catch (err) {}
-      }, 2000); // Increased debounce to 2s to reduce DB load
-    },
-    [activeFileId, PROJECT_ID]
-  );
-
-  // GLITCH FIX: Throttle Cursor
-  const handleLocalCursor = useCallback(
-    (cursorPos) => {
-      const now = Date.now();
-      // Only emit cursor every 50ms
-      if (now - lastCursorEmit.current > 50) {
-        if (socketRef.current)
-          socketRef.current.emit("cursor-move", {
-            roomId: PROJECT_ID,
-            fileId: activeFileId,
-            cursor: cursorPos,
-          });
-        lastCursorEmit.current = now;
-      }
-    },
-    [activeFileId, PROJECT_ID]
-  );
-
-  // --- UTILS ---
-  const handleFileSelect = (id, type) => {
-    setSelectedId(id);
-    if (type === "file") {
-      if (!openFiles.includes(id)) setOpenFiles([...openFiles, id]);
-      setActiveFileId(id);
-    }
-  };
-
-  const handleTabClick = (id) => {
-    setActiveFileId(id);
-    setSelectedId(id);
-  };
-  const handleCloseTab = (e, id) => {
-    e.stopPropagation();
-    const newOpenFiles = openFiles.filter((fileId) => fileId !== id);
-    setOpenFiles(newOpenFiles);
-    if (activeFileId === id) {
-      if (newOpenFiles.length > 0) {
-        const nextId = newOpenFiles[newOpenFiles.length - 1];
-        setActiveFileId(nextId);
-        setSelectedId(nextId);
-      } else {
-        setActiveFileId(null);
-        setSelectedId(null);
-      }
-    }
-  };
-  const handleToggleFolder = (id) => {
-    const toggleRecursive = (list) =>
-      list.map((item) => {
-        if (item.id === id) return { ...item, isOpen: !item.isOpen };
-        if (item.children)
-          return { ...item, children: toggleRecursive(item.children) };
-        return item;
-      });
-    setFiles((prev) => toggleRecursive(prev));
-  };
-
-  const handleCreateItem = (type) => {
-    const tempId = "temp_" + Date.now();
-    setCreatingType(type);
-    const newItem = {
-      id: tempId,
-      name: "",
-      type: type,
-      content: "",
-      children: type === "folder" ? [] : undefined,
-      isOpen: true,
-      isTemp: true,
-    };
-    let inserted = false;
-    const addItemRecursive = (list) =>
-      list.map((item) => {
-        if (item.id === selectedId && item.type === "folder") {
-          inserted = true;
-          return {
-            ...item,
-            isOpen: true,
-            children: [newItem, ...(item.children || [])],
-          };
-        }
-        if (item.children)
-          return { ...item, children: addItemRecursive(item.children) };
-        return item;
-      });
-    let newFiles = addItemRecursive(files);
-    if (!inserted) newFiles = [...newFiles, newItem];
-    setFiles(newFiles);
-    setEditingId(tempId);
-  };
-
-  const activeFile = findFileById(files, activeFileId);
-
-  // --------------------------------------------------------------------------
-  // RENDER
-  // --------------------------------------------------------------------------
-  if (loading)
-    return (
-      <div
-        className={`h-screen flex items-center justify-center ${theme.bg} ${theme.text}`}
-      >
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
-    );
-
-  if (!isAuthorized) {
-    return (
-      <div
-        className={`h-screen flex flex-col items-center justify-center ${theme.bg} ${theme.text} animate-fade-in`}
-      >
-        <div
-          className={`max-w-md w-full p-8 rounded-2xl border ${theme.border} ${theme.sidebarBg} shadow-2xl text-center`}
-        >
-          <div className="mx-auto w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
-            <Shield className="w-10 h-10 text-red-500" />
-          </div>
-          <h1 className="text-3xl font-bold mb-3">Access Denied</h1>
-          <p className="opacity-60 mb-8 text-sm">
-            You do not have permission to view this project.
-          </p>
-          {accessRequestSent ? (
-            <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 flex flex-col items-center">
-              <CheckCircle2 className="w-8 h-8 text-green-500 mb-2" />
-              <span className="font-bold text-green-500">Request Sent!</span>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <button
-                onClick={() =>
-                  handleRequestAccess(
-                    PROJECT_ID,
-                    setIsRequestingAccess,
-                    setAccessRequestSent
-                  )
-                }
-                disabled={isRequestingAccess}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg"
-              >
-                {isRequestingAccess ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <Shield className="w-5 h-5" />
-                )}{" "}
-                Request Permission
-              </button>
-              <button
-                onClick={() => window.history.back()}
-                className="w-full py-3 rounded-xl hover:bg-gray-500/10 transition-colors text-xs font-medium opacity-60 hover:opacity-100"
-              >
-                Go Back to Dashboard
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+// ... keep your existing hooks and logic above ...
 
   return (
-    <div
-      className={`h-screen flex flex-col ${theme.bg} ${theme.text} overflow-hidden font-sans text-sm relative`}
-    >
-      {/* Invite Modal */}
+    <div className={`h-screen flex flex-col ${CodeEditorTheme.bg} ${CodeEditorTheme.text} overflow-hidden font-sans text-sm relative selection:bg-blue-500/30`}>
+      
+      {/* --- INVITE MODAL (Keep as is) --- */}
       {showInviteModal && (
-        <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-          <div
-            className={`${theme.sidebarBg} border ${theme.border} p-6 rounded-xl shadow-2xl w-96 animate-fade-in`}
-          >
-            <div className="flex justify-between items-center mb-4">
-              <h3 className={`text-lg font-bold ${theme.textActive}`}>
-                Invite Collaborator
-              </h3>
-              <button onClick={() => setShowInviteModal(false)}>
-                <X className="w-5 h-5 opacity-50 hover:opacity-100" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium opacity-70 mb-1">
-                  Email Address
-                </label>
-                <div
-                  className={`flex items-center px-3 py-2 rounded-md border ${theme.border} ${theme.inputBg}`}
-                >
-                  <input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="colleague@example.com"
-                    className={`flex-1 bg-transparent outline-none ${theme.inputText}`}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium opacity-70 mb-1">
-                  Permission
-                </label>
-                <div
-                  className={`relative px-3 py-2 rounded-md border ${theme.border} ${theme.inputBg}`}
-                >
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value)}
-                    className={`w-full bg-transparent outline-none appearance-none ${theme.inputText}`}
-                  >
-                    <option value="viewer">Viewer</option>
-                    <option value="editor">Editor</option>
-                  </select>
-                  <ChevronDown className="w-4 h-4 absolute right-3 top-2.5 opacity-50 pointer-events-none" />
-                </div>
-              </div>
-              <button
-                onClick={() =>
-                  handleSendInvite(
-                    inviteEmail,
-                    inviteRole,
-                    PROJECT_ID,
-                    setPendingInvites,
-                    setInviteEmail,
-                    setShowInviteModal,
-                    setIsInviting
-                  )
-                }
-                disabled={isInviting}
-                className={`w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-md transition-colors flex items-center justify-center`}
-              >
-                {isInviting ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                ) : (
-                  <Share2 className="w-4 h-4 mr-2" />
-                )}{" "}
-                Send Invite
-              </button>
-            </div>
-          </div>
-        </div>
+         // ... existing invite modal code ...
+         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+             {/* ... content ... */}
+         </div>
       )}
 
-      {/* Top Bar */}
-      <div
-        className={`h-10 border-b ${theme.border} ${theme.sidebarBg} flex items-center justify-between px-3 select-none`}
-      >
-        <div className="flex items-center space-x-3">
-          <Menu className="w-4 h-4 opacity-70 cursor-pointer" />
-          <span className="font-medium text-xs flex items-center opacity-80">
-            File <span className="mx-2">Edit</span>{" "}
-            <span className="mx-2">View</span>
-          </span>
-        </div>
-        <div className="flex-1 flex justify-center items-center space-x-2">
-          <div
-            className={`flex items-center space-x-2 px-3 py-1 rounded-md border ${theme.border} ${theme.bg} opacity-80 w-64 max-w-lg`}
+      {/* --- RESPONSIVE TOP BAR --- */}
+      <div className={`h-16 border-b ${CodeEditorTheme.border} ${CodeEditorTheme.sidebarBg} flex items-center justify-between px-4 md:px-6 select-none relative z-20 shadow-sm flex-shrink-0`}>
+        
+        {/* Left: Brand & Mobile Menu */}
+        <div className="flex items-center gap-4">
+          {/* Mobile Menu Button */}
+          <button 
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            className="md:hidden p-2 hover:bg-white/10 rounded-lg transition-colors"
           >
-            <Search className="w-3 h-3 opacity-50" />
-            <span className="text-xs opacity-50">
-              SyncCode - {activeFile ? activeFile.name : "No file"}
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <Code2 className="w-5 h-5 text-white" />
+            </div>
+            <span className="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-emerald-600 hidden sm:block">
+              SyncCode
             </span>
           </div>
-          <button
-            onClick={(
-              e
-            ) => runCode(
-               activeFile, setIsRunning, setShowTerminal, setTerminalOutput,
-            )}
-            disabled={isRunning || !activeFile}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
-              isRunning
-                ? "bg-gray-700"
-                : "bg-green-600 hover:bg-green-500 text-white"
-            }`}
-          >
-            {isRunning ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Play className="w-3 h-3 fill-current" />
-            )}
-            <span>Run File</span>
-          </button>
-          <button
-            onClick={
-              (
-                e
-              ) => runProject(
-               files, activeFile, setIsRunning, setShowTerminal, setTerminalOutput,
 
-              )
-            }
-            disabled={isRunning}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
-              isRunning
-                ? "bg-gray-700"
-                : "bg-blue-600 hover:bg-blue-500 text-white"
-            }`}
-          >
-            {isRunning ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Package className="w-3 h-3" />
-            )}
-            <span>Run Project</span>
-          </button>
-        </div>
-        <div className="flex items-center space-x-3">
-          <div className="flex -space-x-2 mr-2">
-            {onlineUsers.map((c) => (
-              <div
-                key={c.id}
-                className="w-6 h-6 rounded-full border-2 border-[#0d1117] flex items-center justify-center text-[10px] font-bold text-white relative group cursor-pointer"
-                style={{ backgroundColor: c.color }}
-              >
-                {c.name ? c.name[0].toUpperCase() : "?"}
-                <span className="absolute top-7 right-0 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none transition-opacity">
-                  {c.name}
-                </span>
-              </div>
+          {/* Desktop Menu Items - Hidden on Mobile */}
+          <div className="h-6 w-px bg-white/10 mx-2 hidden md:block"></div>
+          <div className="hidden md:flex items-center space-x-1">
+            {["File", "Edit", "View", "Go", "Help"].map(item => (
+              <button key={item} className="px-3 py-1.5 rounded-lg text-sm opacity-60 hover:opacity-100 hover:bg-white/5 transition-colors">
+                {item}
+              </button>
             ))}
+          </div>
+        </div>
+
+        {/* Center: Search (Hidden on Mobile) */}
+        <div className="absolute left-1/2 transform -translate-x-1/2 hidden lg:flex items-center justify-center w-1/3">
+           {/* ... existing search code ... */}
+           <div className={`flex items-center w-full max-w-md px-4 py-2 rounded-xl border ${CodeEditorTheme.border} ${CodeEditorTheme.inputBg} opacity-80 hover:opacity-100 transition-all group`}>
+              <Search className="w-4 h-4 opacity-40 group-hover:text-blue-400 transition-colors mr-3" />
+              <span className="text-sm opacity-50 flex-1 truncate text-center">
+                  {activeFile ? activeFile.name : "Search files (Ctrl+P)"}
+              </span>
+              <span className="text-[10px] border border-white/10 px-1.5 rounded text-opacity-40 text-white">⌘P</span>
+           </div>
+        </div>
+
+        {/* Right: Actions */}
+        <div className="flex items-center gap-2 md:gap-4">
+          {/* Run Actions (Condensed on Mobile) */}
+          <div className="flex items-center bg-zinc-800/50 p-1 rounded-lg border border-white/5">
             <button
-              onClick={() => setShowInviteModal(true)}
-              className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-white border-2 border-[#0d1117]"
+              onClick={(e) => runCode(activeFile, setIsRunning, setShowTerminal, setTerminalOutput)}
+              disabled={isRunning || !activeFile}
+              className="p-1.5 md:px-3 md:py-1.5 rounded-md bg-green-600/10 text-green-400 hover:bg-green-600 hover:text-white transition-all disabled:opacity-50"
+              title="Run File"
             >
-              <UserPlus className="w-3 h-3" />
+              {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            </button>
+            <div className="w-px h-4 bg-white/10 mx-1"></div>
+            <button
+               onClick={(e) => {
+                 /* ... existing runProject logic ... */
+                 if (!activeFile) {
+                    setShowTerminal(true);
+                    setTerminalOutput([{ type: "error", content: "Please select a file to run as the entry point." }]);
+                    return;
+                }
+                const flatFileMap = generateFileMap(files);
+                const entryPath = getActiveFilePath(files, activeFile.id);
+                runProject(flatFileMap, entryPath, setIsRunning, setShowTerminal, setTerminalOutput);
+               }}
+               disabled={isRunning}
+               className="p-1.5 md:px-3 md:py-1.5 rounded-md bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
+               title="Run Project"
+            >
+              <Package className="w-4 h-4" />
             </button>
           </div>
-          <button
-            onClick={toggleTheme}
-            className="p-1.5 rounded-md hover:bg-gray-500/10"
-          >
-            {darkMode ? (
-              <Sun className="w-4 h-4 text-yellow-400" />
-            ) : (
-              <Moon className="w-4 h-4" />
+
+          {/* Collaborators (Condensed on Mobile) */}
+          <div className="flex items-center -space-x-2">
+            {/* Show fewer users on mobile */}
+            {onlineUsers.slice(0, 2).map((u) => (
+               <div key={u.id} className="w-8 h-8 rounded-full border-2 border-zinc-900 flex items-center justify-center text-xs font-bold text-white relative z-10" style={{backgroundColor: u.color}}>
+                  {u.name[0]}
+               </div>
+            ))}
+            {onlineUsers.length > 2 && (
+                <div className="w-8 h-8 rounded-full border-2 border-zinc-900 bg-zinc-700 flex items-center justify-center text-xs font-bold text-white z-0">
+                  +{onlineUsers.length - 2}
+                </div>
             )}
+            <button onClick={() => setShowInviteModal(true)} className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 flex items-center justify-center text-white transition-colors ml-2">
+                <UserPlus className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Theme Toggle */}
+          <button onClick={toggleTheme} className="hidden sm:flex w-9 h-9 rounded-xl items-center justify-center bg-white/5 hover:bg-white/10 transition-colors border border-white/5">
+             {darkMode ? <Sun className="w-5 h-5 text-amber-300" /> : <Moon className="w-5 h-5 text-indigo-500" />}
           </button>
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Activity Bar */}
-        <div
-          className={`w-12 border-r ${theme.border} ${theme.activityBarBg} flex flex-col items-center py-2 z-20`}
-        >
-          <ActivityIcon
-            icon={FileCode}
-            active={sidebarView === "explorer"}
-            onClick={() => setSidebarView("explorer")}
-          />
-          <ActivityIcon
-            icon={Users}
-            active={sidebarView === "collab"}
-            onClick={() => setSidebarView("collab")}
-            notification={pendingInvites.length + accessRequests.length}
-          />
-          <div className="flex-1" />
-          <ActivityIcon icon={Settings} />
-        </div>
-
-        {/* Sidebar Content */}
-        <div
-          className={`w-60 border-r ${theme.border} ${theme.sidebarBg} flex flex-col`}
-        >
-          {sidebarView === "explorer" && (
-            <>
-              <div className="flex items-center justify-between p-3 text-xs font-bold uppercase tracking-wider opacity-70">
-                <span>Explorer</span>
-                <MoreVertical className="w-4 h-4 cursor-pointer" />
-              </div>
-              <div className="px-2 pb-2 flex-1 overflow-y-auto">
-                <div className="flex items-center justify-between text-xs px-2 py-1 mb-2 font-bold opacity-80 group cursor-pointer hover:opacity-100">
-                  <span className="flex items-center">
-                    <ChevronDown className="w-3 h-3 mr-1" /> PROJECT
-                  </span>
-                  <div className="flex space-x-1">
-                    <button
-                      onClick={() => handleCreateItem("file")}
-                      className="p-1 hover:bg-gray-500/10 rounded"
-                    >
-                      <FilePlus className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleCreateItem("folder")}
-                      className="p-1 hover:bg-gray-500/10 rounded"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-                <FileTree
-                  items={files}
-                  activeId={activeFileId}
-                  selectedId={selectedId}
-                  editingId={editingId}
-                  collaborators={onlineUsers}
-                  onToggle={handleToggleFolder}
-                  onSelect={handleFileSelect}
-                  onRename={(id, newName) =>
-                    handleRename(
-                      id,
-                      newName,
-                      PROJECT_ID,
-                      files,
-                      setFiles,
-                      creatingType,
-                      setCreatingType,
-                      setEditingId,
-                      handleFileSelect
-                    )
-                  }
-                  onDelete={(e, id) =>
-                    handleDelete(
-                      e,
-                      id,
-                      PROJECT_ID,
-                      files,
-                      setFiles,
-                      activeFileId,
-                      handleCloseTab,
-                      openFiles,
-                      setOpenFiles
-                    )
-                  }
-                  setEditingId={setEditingId}
-                  theme={theme}
-                />
-              </div>
-            </>
-          )}
-
-          {/* --- COLLABORATION SIDEBAR (Fixed) --- */}
-          {sidebarView === "collab" && (
-            <>
-              <div className="flex items-center justify-between p-3 text-xs font-bold uppercase tracking-wider opacity-70">
-                <span>Collaboration</span>
-              </div>
-              <div className="p-2 space-y-6 overflow-y-auto">
-                {/* 1. ACCESS REQUESTS (Only Visible if Owner) */}
-                {amIOwner && accessRequests.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-bold opacity-50 mb-2 px-2 flex justify-between">
-                      <span>ACCESS REQUESTS</span>
-                      <span className="bg-red-500 text-white px-1.5 rounded-full">
-                        {accessRequests.length}
-                      </span>
-                    </div>
-                    {accessRequests.map((req) => (
-                      <div
-                        key={req._id}
-                        className="flex items-center justify-between p-2 rounded hover:bg-gray-500/10 mb-1 border border-orange-500/30 bg-orange-500/5"
-                      >
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-medium truncate">
-                            {req.user?.username || "Unknown"}
-                          </span>
-                          <span className="text-[9px] opacity-60 truncate">
-                            {req.user?.email || req.email}
-                          </span>
-                        </div>
-                        <div className="flex space-x-1">
-                          <button
-                            onClick={() =>
-                              handleAccessRequestAction(
-                                req.user || { email: req.email },
-                                "approve",
-
-                                PROJECT_ID,
-                                setAccessRequests,
-                                setProjectMembers
-                              )
-                            }
-                            className="p-1 text-green-500 hover:bg-green-500/10 rounded"
-                            title="Approve"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleAccessRequestAction(
-                                req.user || { email: req.email },
-                                "reject",
-
-                                PROJECT_ID,
-                                setAccessRequests,
-                                setProjectMembers
-                              )
-                            }
-                            className="p-1 text-red-500 hover:bg-red-500/10 rounded"
-                            title="Reject"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 2. PENDING INVITES */}
-                <div>
-                  <div className="text-[10px] font-bold opacity-50 mb-2 px-2 flex justify-between">
-                    <span>PENDING INVITES</span>
-                    <span className="bg-blue-600 text-white px-1.5 rounded-full">
-                      {pendingInvites.length}
-                    </span>
-                  </div>
-                  {pendingInvites.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="flex items-center justify-between p-2 rounded hover:bg-gray-500/10 group mb-1"
-                    >
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-medium truncate">
-                          {inv.email}
-                        </span>
-                        <span className="text-[9px] text-blue-400 capitalize">
-                          {inv.role}
-                        </span>
-                      </div>
-                      <span className="text-[9px] opacity-40 italic">
-                        Waiting
-                      </span>
-                    </div>
-                  ))}
-                  {pendingInvites.length === 0 && (
-                    <span className="px-2 text-xs opacity-30 italic">
-                      No pending invites
-                    </span>
-                  )}
-                </div>
-
-                <div className="h-px bg-gray-500/20"></div>
-
-                {/* 3. TEAM MEMBERS */}
-                <div>
-                  <div className="text-[10px] font-bold opacity-50 mb-2 px-2">
-                    TEAM MEMBERS
-                  </div>
-                  {projectMembers.map((member) => (
-                    <div
-                      key={member.id}
-                      className="flex flex-col p-2 rounded hover:bg-gray-500/10 group mb-1"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center space-x-2 min-w-0">
-                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[9px] font-bold text-white">
-                            {member.name ? member.name[0].toUpperCase() : "U"}
-                          </div>
-                          <span className="truncate font-medium">
-                            {member.name || member.email}
-                          </span>
-                        </div>
-                        <div
-                          className={`w-2 h-2 rounded-full ${
-                            onlineUsers.find((u) => u.name === member.name)
-                              ? "bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]"
-                              : "bg-gray-600"
-                          }`}
-                          title={
-                            onlineUsers.find((u) => u.name === member.name)
-                              ? "Online"
-                              : "Offline"
-                          }
-                        ></div>
-                      </div>
-
-                      {/* ROLE MANAGEMENT & LEAVE/KICK LOGIC */}
-                      <div className="flex items-center justify-between pl-7">
-                        {member.role === "owner" ? (
-                          <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
-                            <Shield className="w-3 h-3" /> Owner
-                          </span>
-                        ) : (
-                          <div className="flex items-center space-x-2 w-full">
-                            {/* Role Dropdown - ONLY VISIBLE TO OWNER */}
-                            {amIOwner ? (
-                              <div className="relative group/role">
-                                <select
-                                  value={member.role}
-                                  onChange={(e) =>
-                                    handleRoleChange(
-                                      member.id,
-                                      e.target.value,
-                                      PROJECT_ID,
-                                      setProjectMembers,
-                                      setOnlineUsers
-                                    )
-                                  }
-                                  className={`appearance-none bg-transparent text-[10px] uppercase font-bold outline-none cursor-pointer ${
-                                    member.role === "editor"
-                                      ? "text-blue-400"
-                                      : "text-gray-400"
-                                  } hover:text-white transition-colors`}
-                                >
-                                  <option
-                                    value="viewer"
-                                    className="bg-gray-900 text-gray-400"
-                                  >
-                                    Viewer
-                                  </option>
-                                  <option
-                                    value="editor"
-                                    className="bg-gray-900 text-blue-400"
-                                  >
-                                    Editor
-                                  </option>
-                                </select>
-                              </div>
-                            ) : (
-                              <span
-                                className={`text-[10px] uppercase font-bold ${
-                                  member.role === "editor"
-                                    ? "text-blue-400"
-                                    : "text-gray-400"
-                                }`}
-                              >
-                                {member.role}
-                              </span>
-                            )}
-
-                            <div className="flex-1"></div>
-
-                            {/* ACTIONS: KICK OR LEAVE */}
-                            {/* Case 1: Owner viewing others -> Show KICK */}
-                            {amIOwner && member.id !== currentUserId && (
-                              <button
-                                onClick={() =>
-                                  handleRemoveMember(
-                                    member.id,
-                                    PROJECT_ID,
-                                    setProjectMembers,
-                                    setOnlineUsers
-                                  )
-                                }
-                                className="opacity-0 group-hover:opacity-100 p-1 text-red-400 hover:bg-red-500/10 rounded transition-opacity"
-                                title="Remove from project"
-                              >
-                                <UserMinus className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Case 2: Collaborator viewing THEMSELVES -> Show LEAVE */}
-                            {!amIOwner && member.id === currentUserId && (
-                              <button
-                                onClick={() =>
-                                  handleLeaveProject(
-                                    PROJECT_ID,
-                                    currentUserId,
-                                    navigate
-                                  )
-                                }
-                                className="p-1 text-red-400 hover:bg-red-500/10 rounded"
-                                title="Leave Project"
-                              >
-                                <LogOut className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {!["explorer", "collab"].includes(sidebarView) && (
-            <div className="p-4 text-xs opacity-50 flex flex-col items-center justify-center h-full">
-              Coming soon
-            </div>
-          )}
-        </div>
-
-        {/* Main Editor Area */}
-        <div className="flex-1 flex flex-col min-w-0 bg-transparent relative overflow-hidden">
-          {/* Tabs */}
-          <div
-            className={`flex items-center ${theme.activityBarBg} border-b ${theme.border} overflow-x-auto scrollbar-hide h-9 flex-shrink-0`}
-          >
-            {openFiles.map((fileId) => {
-              const file = findFileById(files, fileId);
-              if (!file) return null;
-              return (
-                <Tab
-                  key={file.id}
-                  name={file.name}
-                  active={activeFileId === file.id}
-                  theme={theme}
-                  icon={getFileIconIcon(file.name)}
-                  color={getFileIconColor(file.name)}
-                  onClick={() => handleTabClick(file.id)}
-                  onClose={(e) => handleCloseTab(e, file.id)}
-                />
-              );
-            })}
-          </div>
-
-          {/* Editor + Minimap */}
-          <div className="flex-1 flex overflow-hidden relative min-h-0">
-            {activeFile ? (
-              <>
-                <div className="flex-1 relative h-full">
-                  <EditorArea
-                    key={activeFile.id}
-                    theme={theme}
-                    darkMode={darkMode}
-                    code={activeFile.content}
-                    onChange={handleCodeChange}
-                    onCursorChange={handleLocalCursor}
-                  />
-                  {onlineUsers.map((c) => {
-                    if (c.fileId !== activeFileId) return null;
-                    const top = 4 + (c.cursor?.line * 21 || 0);
-                    const left = 50 + (c.cursor?.col * 8.4 || 0);
-                    return (
-                      <div
-                        key={c.id}
-                        className="absolute w-0.5 h-5 transition-all duration-100 pointer-events-none z-10"
-                        style={{
-                          top: `${top}px`,
-                          left: `${left}px`,
-                          backgroundColor: c.color,
-                          boxShadow: `0 0 8px ${c.color}`,
-                        }}
-                      >
-                        <div
-                          className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-bold text-white whitespace-nowrap"
-                          style={{ backgroundColor: c.color }}
-                        >
-                          {c.name}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <Minimap theme={theme} code={activeFile.content} />
-              </>
-            ) : (
-              <div className="flex-1 flex items-center justify-center opacity-30 flex-col">
-                <Code2 className="w-16 h-16 mb-4" />
-                <p>Select a file to start editing</p>
-              </div>
-            )}
-          </div>
-
-          {/* Terminal & Status Bar */}
-          {showTerminal && (
-            <div
-              className={`h-48 border-t ${theme.border} ${theme.terminalBg} flex flex-col font-mono text-xs flex-shrink-0`}
-            >
-              <div className="flex items-center justify-between px-3 py-1 border-b border-[#30363d] opacity-80">
-                <span className="font-bold">TERMINAL</span>
-                <div className="flex space-x-2">
-                  <button onClick={() => setTerminalOutput([])}>
-                    <Trash2 className="w-3 h-3 hover:text-white" />
-                  </button>
-                  <button onClick={() => setShowTerminal(false)}>
-                    <X className="w-3 h-3 hover:text-white" />
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 p-3 overflow-y-auto space-y-1">
-                {terminalOutput.map((log, i) => (
-                  <div
-                    key={i}
-                    className={`${
-                      log.type === "error"
-                        ? "text-red-400"
-                        : log.type === "success"
-                        ? "text-green-400"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    {log.content}
-                  </div>
-                ))}{" "}
-                {isRunning && (
-                  <div className="text-yellow-400 animate-pulse">
-                    _ Executing...
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div
-            className={`h-6 border-t ${theme.border} ${theme.sidebarBg} flex items-center px-3 justify-between text-[10px] select-none flex-shrink-0`}
-          >
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-1 hover:text-blue-500 cursor-pointer">
-                <GitBranch className="w-3 h-3" />
-                <span>main*</span>
-              </div>
-              <div className="flex items-center space-x-1 hover:text-blue-500 cursor-pointer ml-2">
-                <TerminalIcon className="w-3 h-3" />
-                <span onClick={() => setShowTerminal(!showTerminal)}>
-                  Terminal
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="cursor-pointer hover:text-blue-500">
-                Connected as {currentUser.name}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ... (Sub-Components remain exactly as provided in previous snippets: FileTree, EditorArea, Minimap, ActivityIcon, Tab, getFileIcon, etc.)
-function FileTree({
-  items,
-  level = 0,
-  activeId,
-  selectedId,
-  editingId,
-  collaborators = [],
-  onToggle,
-  onSelect,
-  onRename,
-  onDelete,
-  setEditingId,
-  theme,
-}) {
-  return items.map((item) => {
-    const activeUsersHere = collaborators.filter((c) => c.fileId === item.id);
-    return (
-      <div key={item.id}>
-        <div
-          className={`flex items-center py-1 px-2 cursor-pointer transition-colors text-xs select-none border-l-2 group ${
-            item.id === selectedId ? "bg-blue-500/20" : "hover:bg-gray-500/10"
-          } ${
-            item.id === activeId
-              ? "text-blue-400 border-blue-400"
-              : "border-transparent"
-          }`}
-          style={{ paddingLeft: `${level * 12 + 12}px` }}
-          onClick={() => {
-            if (item.type === "folder") {
-              onToggle(item.id);
-              onSelect(item.id, "folder");
-            } else {
-              onSelect(item.id, "file");
-            }
-          }}
-        >
-          <span className="mr-1.5 opacity-70">
-            {item.type === "folder" ? (
-              item.isOpen ? (
-                <ChevronDown className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5" />
-              )
-            ) : (
-              getFileIcon(item.name)
-            )}
-          </span>
-          {editingId === item.id ? (
-            <input
-              autoFocus
-              className={`${theme.inputBg} ${theme.inputText} border border-blue-500 rounded px-1 outline-none w-full h-5`}
-              defaultValue={item.name}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onRename(item.id, e.currentTarget.value);
-                if (e.key === "Escape") setEditingId(null);
-              }}
-              onBlur={(e) => onRename(item.id, e.currentTarget.value)}
-            />
-          ) : (
-            <div className="flex-1 flex justify-between items-center overflow-hidden">
-              <span className="truncate flex items-center">
-                {item.name || "Untitled"}{" "}
-                {activeUsersHere.length > 0 && (
-                  <div className="flex -space-x-1 ml-2">
-                    {activeUsersHere.map((u) => (
-                      <div
-                        key={u.id}
-                        className="w-2 h-2 rounded-full border border-black"
-                        style={{ backgroundColor: u.color }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </span>
-              <div className="hidden group-hover:flex items-center space-x-1 mr-1">
-                <button
-                  className="hover:text-blue-400 p-0.5"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingId(item.id);
-                  }}
-                >
-                  <Edit2 className="w-3 h-3" />
-                </button>
-                <button
-                  className="hover:text-red-400 p-0.5"
-                  onClick={(e) => onDelete(e, item.id)}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-        {item.type === "folder" && item.isOpen && item.children && (
-          <FileTree
-            items={item.children}
-            level={level + 1}
-            activeId={activeId}
-            selectedId={selectedId}
-            editingId={editingId}
-            collaborators={collaborators}
-            onToggle={onToggle}
-            onSelect={onSelect}
-            onRename={onRename}
-            onDelete={onDelete}
-            setEditingId={setEditingId}
-            theme={theme}
+      {/* --- MAIN LAYOUT --- */}
+      <div className="flex-1 flex overflow-hidden relative">
+        
+        {/* MOBILE BACKDROP (Closes sidebar when clicking outside) */}
+        {isMobileSidebarOpen && (
+          <div 
+            className="absolute inset-0 bg-black/50 z-30 md:hidden backdrop-blur-sm"
+            onClick={() => setIsMobileSidebarOpen(false)}
           />
         )}
-      </div>
-    );
-  });
-}
-function EditorArea({ theme, darkMode, code, onChange, onCursorChange }) {
-  const handleChange = React.useCallback(
-    (val) => {
-      onChange(val);
-    },
-    [onChange]
-  );
-  const handleUpdate = React.useCallback(
-    (viewUpdate) => {
-      if (viewUpdate.selectionSet) {
-        const pos = viewUpdate.state.selection.main.head;
-        const lineObj = viewUpdate.state.doc.lineAt(pos);
-        if (onCursorChange)
-          onCursorChange({ line: lineObj.number - 1, col: pos - lineObj.from });
-      }
-    },
-    [onCursorChange]
-  );
-  return (
-    <div className={`relative h-full overflow-hidden font-mono text-sm`}>
-      <CodeMirror
-        value={code}
-        height="100%"
-        theme={darkMode ? githubDarkTheme : "light"}
-        extensions={[javascript({ jsx: true }), python()]}
-        onChange={handleChange}
-        onUpdate={handleUpdate}
-        className="h-full"
-      />
-    </div>
-  );
-}
-function Minimap({ theme, code }) {
-  return (
-    <div
-      className={`w-16 border-l ${theme.border} ${theme.bg} opacity-50 hidden md:block select-none overflow-hidden relative`}
-    >
-      <div className="text-[2px] leading-[3px] p-1 text-gray-500 font-mono whitespace-pre text-left break-all">
-        {code}
-      </div>
-    </div>
-  );
-}
-function ActivityIcon({ icon: Icon, active, notification, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`p-3 relative group transition-colors mb-2 ${
-        active ? "text-white" : "text-gray-500 hover:text-gray-300"
-      }`}
-    >
-      <Icon className="w-6 h-6" strokeWidth={1.5} />
-      {active && (
-        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />
-      )}
-      {notification > 0 && (
-        <div className="absolute top-2 right-2 w-4 h-4 bg-blue-600 rounded-full text-[10px] flex items-center justify-center text-white border border-[#0d1117]">
-          {notification}
+
+        {/* --- SIDEBAR CONTAINER (Sliding Drawer on Mobile, Static on Desktop) --- */}
+        <div className={`
+            absolute md:static inset-y-0 left-0 z-40
+            flex h-full transition-transform duration-300 ease-in-out
+            ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}>
+          
+          {/* Activity Bar */}
+          <div className={`w-16 border-r ${CodeEditorTheme.border} ${CodeEditorTheme.activityBarBg} flex flex-col items-center py-6 gap-4`}>
+             <ActivityIcon icon={FileCode} active={sidebarView === "explorer"} onClick={() => setSidebarView("explorer")} theme={CodeEditorTheme} />
+             <ActivityIcon icon={Search} active={sidebarView === "search"} onClick={() => setSidebarView("search")} theme={CodeEditorTheme} />
+             <ActivityIcon icon={GitBranch} active={sidebarView === "git"} onClick={() => setSidebarView("git")} theme={CodeEditorTheme} />
+             <ActivityIcon icon={Users} active={sidebarView === "collab"} onClick={() => setSidebarView("collab")} notification={pendingInvites.length + accessRequests.length} theme={CodeEditorTheme} />
+             <div className="flex-1" />
+             <ActivityIcon icon={Settings} theme={CodeEditorTheme} />
+             {/* User Profile (Mobile Visible here since top bar is crowded) */}
+             <div className="w-8 h-8 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs mt-2 cursor-pointer shadow-md">
+                 {currentUser.name[0]}
+             </div>
+          </div>
+
+          {/* Sidebar Content (Explorer/Collab) */}
+          <div className={`w-64 md:w-72 border-r ${CodeEditorTheme.border} ${CodeEditorTheme.sidebarBg} flex flex-col`}>
+             {/* ... KEEP YOUR EXISTING SIDEBAR CONTENT LOGIC HERE (Explorer, Collab, etc.) ... */}
+             {sidebarView === "explorer" && (
+                <>
+                  <div className="h-12 flex items-center justify-between px-5 border-b border-transparent">
+                     <span className="text-xs font-bold uppercase tracking-widest opacity-60">Explorer</span>
+                     <button className="opacity-50 hover:opacity-100 transition-opacity"><MoreHorizontal className="w-4 h-4" /></button>
+                  </div>
+                  {/* ... Project Title & FileTree ... */}
+                  <div className="px-4 pb-2">
+                     <div className="flex items-center justify-between group py-2">
+                        <div className="flex items-center font-bold text-sm">
+                           <ChevronDown className="w-4 h-4 mr-1 opacity-70" />
+                           <span className="truncate max-w-[120px]">{'project'}</span>
+                        </div>
+                        <div className="flex space-x-1">
+                           <button onClick={() => handleCreateItem("file")} className="p-1 hover:bg-white/10 rounded"><FilePlus className="w-4 h-4 text-blue-400" /></button>
+                           <button onClick={() => handleCreateItem("folder")} className="p-1 hover:bg-white/10 rounded"><FolderPlus className="w-4 h-4 text-yellow-400" /></button>
+                        </div>
+                     </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-0.5">
+                     <FileTree
+                        items={files}
+                        activeId={activeFileId}
+                        selectedId={selectedId}
+                        editingId={editingId}
+                        collaborators={onlineUsers}
+                        onToggle={handleToggleFolder}
+                        onSelect={handleFileSelect}
+                        onRename={(id, newName) => handleRename(id, newName, PROJECT_ID, files, setFiles, creatingType, setCreatingType, setEditingId, handleFileSelect)}
+                        onDelete={(e, id) => handleDelete(e, id, PROJECT_ID, files, setFiles, activeFileId, handleCloseTab, openFiles, setOpenFiles)}
+                        setEditingId={setEditingId}
+                        theme={CodeEditorTheme}
+                     />
+                  </div>
+                </>
+             )}
+             
+             {/* ... Keep Collab Sidebar Logic ... */}
+             {sidebarView === "collab" && (
+                <div className="flex flex-col h-full">
+                   <div className="p-5 border-b border-white/5">
+                      <h2 className="font-bold text-lg mb-1">Collaborators</h2>
+                      <p className="text-xs opacity-50">Manage access and team members</p>
+                   </div>
+                   {/* ... Insert your existing Collab sidebar content here ... */}
+                   {/* NOTE: Just copying the structure, ensure you include your inner map loops */}
+                   <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                      {/* Access Requests */}
+                      {amIOwner && accessRequests.length > 0 && (
+                          // ... existing request logic ...
+                          <div className="space-y-3">
+                             {accessRequests.map((req) => (
+                                <div key={req._id} className="p-3 bg-zinc-800/50 rounded-xl border border-orange-500/20 flex items-center justify-between">
+                                   <div className="flex flex-col"><span className="font-medium text-sm">{req.user?.username}</span></div>
+                                   {/* ... buttons ... */}
+                                    <div className="flex gap-2">
+                                      <button onClick={() => handleAccessRequestAction(req.user || { email: req.email }, "approve", PROJECT_ID, setAccessRequests, setProjectMembers)} className="p-1.5 bg-green-500/20 text-green-400 rounded-lg"><Check className="w-4 h-4" /></button>
+                                      <button onClick={() => handleAccessRequestAction(req.user || { email: req.email }, "reject", PROJECT_ID, setAccessRequests, setProjectMembers)} className="p-1.5 bg-red-500/20 text-red-400 rounded-lg"><X className="w-4 h-4" /></button>
+                                    </div>
+                                </div>
+                             ))}
+                          </div>
+                      )}
+                      {/* Team List (Reuse your loop) */}
+                      <div className="space-y-3">
+                         <div className="text-xs font-bold opacity-50 uppercase tracking-wider">Online Members</div>
+                         {projectMembers.map(member => (
+                            <div key={member.id} className="flex flex-col p-2 rounded hover:bg-gray-500/10 mb-1">
+                               <div className="flex items-center justify-between mb-1">
+                                  <div className="flex items-center space-x-2">
+                                     <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[9px] font-bold text-white">{member.name ? member.name[0] : "U"}</div>
+                                     <span className="truncate font-medium">{member.name}</span>
+                                  </div>
+                                  <div className={`w-2 h-2 rounded-full ${onlineUsers.find(u => u.name === member.name) ? "bg-green-500" : "bg-gray-600"}`} />
+                               </div>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+                </div>
+             )}
+          </div>
         </div>
-      )}
-    </button>
-  );
-}
-function Tab({ name, active, theme, icon: Icon, color, onClick, onClose }) {
-  return (
-    <div
-      onClick={onClick}
-      className={`flex items-center px-3 h-full min-w-[120px] max-w-[180px] border-r ${
-        theme.border
-      } text-xs cursor-pointer group select-none relative ${
-        active
-          ? `${theme.tabActiveBg} ${theme.textActive} border-t-2 border-t-blue-500`
-          : `${theme.tabInactiveBg} opacity-70 hover:opacity-100 hover:bg-gray-800/50`
-      }`}
-    >
-      {Icon && <Icon className={`w-3.5 h-3.5 mr-2 ${color}`} />}
-      <span className="truncate flex-1 mr-2">{name}</span>
-      <button
-        onClick={onClose}
-        className={`opacity-0 group-hover:opacity-100 rounded p-0.5 hover:bg-gray-500/20 transition-all ${
-          active ? "text-white" : ""
-        }`}
-      >
-        <X className="w-3 h-3" />
-      </button>
+
+        {/* --- MAIN EDITOR AREA --- */}
+        <div className="flex-1 flex flex-col min-w-0 bg-transparent relative overflow-hidden h-full">
+            
+            {/* Editor Tabs - Scrollable on Mobile */}
+            <div className={`flex items-end ${CodeEditorTheme.activityBarBg} h-10 flex-shrink-0 select-none overflow-x-auto scrollbar-hide`}>
+              {openFiles.map((fileId) => {
+                const file = findFileById(files, fileId);
+                if (!file) return null;
+                return (
+                  <Tab
+                    key={file.id}
+                    name={file.name}
+                    active={activeFileId === file.id}
+                    theme={CodeEditorTheme}
+                    onClick={() => handleTabClick(file.id)}
+                    onClose={(e) => handleCloseTab(e, file.id)}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Breadcrumbs - Hidden on small mobile if too long */}
+            <div className={`h-8 border-b ${CodeEditorTheme.border} ${CodeEditorTheme.bg} flex items-center px-4 justify-between text-xs flex-shrink-0`}>
+                <div className="flex items-center gap-2 opacity-60 truncate">
+                   <span>src</span>
+                   {activeFile && (
+                     <>
+                       <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                       <span className="font-medium truncate">{activeFile.name}</span>
+                     </>
+                   )}
+                </div>
+                {/* File info hidden on small screens */}
+                <div className="hidden sm:flex items-center gap-3 opacity-60">
+                   <span className="hover:text-blue-400 cursor-pointer">Ln 1, Col 1</span>
+                   <span className="hover:text-blue-400 cursor-pointer">JavaScript</span>
+                </div>
+            </div>
+
+            {/* Code Mirror Area */}
+            <div className="flex-1 flex overflow-hidden relative min-h-0">
+               {activeFile ? (
+                 <>
+                   <div className="flex-1 relative h-full">
+                      <EditorArea
+                        key={activeFile.id}
+                        theme={CodeEditorTheme}
+                        darkMode={darkMode}
+                        code={activeFile.content}
+                        onChange={handleCodeChange}
+                        onCursorChange={handleLocalCursor}
+                      />
+                      {/* Remote Cursors (Keep existing) */}
+                      {onlineUsers.map(c => {
+                          if (c.fileId !== activeFileId || !c.cursor) return null;
+                          return (
+                             <div key={c.id} className="absolute w-0.5 h-5 bg-yellow-500 z-50 pointer-events-none" style={{top: c.cursor.line * 24 + "px", left: c.cursor.col * 9 + "px"}}>
+                                <div className="absolute -top-6 left-0 px-2 py-0.5 rounded bg-yellow-500 text-black text-[10px] font-bold">{c.name}</div>
+                             </div>
+                          );
+                      })}
+                   </div>
+                   {/* Minimap - Hidden on Mobile */}
+                   <div className="hidden md:block">
+                      <Minimap theme={CodeEditorTheme} code={activeFile.content} />
+                   </div>
+                 </>
+               ) : (
+                 <div className="flex-1 flex flex-col items-center justify-center opacity-40 select-none p-4 text-center">
+                    <Code2 className="w-16 h-16 text-emerald-500/50 mb-4" />
+                    <h2 className="text-xl font-bold">No file is open</h2>
+                    <p className="text-sm mt-2">Open the sidebar to select a file.</p>
+                 </div>
+               )}
+            </div>
+
+            {/* Terminal Panel (Resonsive Height) */}
+            {showTerminal && (
+               <div className={`h-[40vh] md:h-64 border-t ${CodeEditorTheme.border} ${CodeEditorTheme.terminalBg} flex flex-col font-mono text-xs flex-shrink-0 animate-in slide-in-from-bottom duration-200 absolute bottom-0 w-full z-20 md:static`}>
+                  {/* ... Keep existing terminal header & content ... */}
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-white/5">
+                     <span className="font-bold text-emerald-400">TERMINAL</span>
+                     <div className="flex gap-2">
+                        <button onClick={() => setTerminalOutput([])}><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => setShowTerminal(false)}><X className="w-3.5 h-3.5" /></button>
+                     </div>
+                  </div>
+                  <div className="flex-1 p-4 overflow-y-auto space-y-1">
+                     {terminalOutput.map((log, i) => (
+                        <div key={i} className={`${log.type === "error" ? "text-red-400" : "text-zinc-400"} flex gap-2`}>
+                           <span className="opacity-30">{new Date().toLocaleTimeString()}</span>
+                           <span>{log.content}</span>
+                        </div>
+                     ))}
+                  </div>
+               </div>
+            )}
+            
+            {/* Status Bar */}
+            <div className="h-6 bg-blue-600 text-white flex items-center px-3 justify-between text-[10px] font-medium select-none flex-shrink-0 z-30 relative">
+               <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1"><GitBranch className="w-3 h-3"/><span>main*</span></div>
+               </div>
+               <div className="flex items-center gap-4" onClick={() => setShowTerminal(!showTerminal)}>
+                  <div className="flex items-center gap-1 cursor-pointer"><TerminalIcon className="w-3 h-3"/><span>Terminal</span></div>
+               </div>
+            </div>
+
+        </div>
+      </div>
     </div>
   );
-}
-const getFileIcon = (name) => {
-  if (name.endsWith(".jsx") || name.endsWith(".js"))
-    return <FileCode className="w-3.5 h-3.5 text-yellow-400" />;
-  if (name.endsWith(".css"))
-    return <Hash className="w-3.5 h-3.5 text-blue-400" />;
-  if (name.endsWith(".json"))
-    return <FileJson className="w-3.5 h-3.5 text-orange-400" />;
-  return <File className="w-3.5 h-3.5 text-gray-400" />;
-};
-const getFileIconIcon = (name) => {
-  if (name.endsWith(".jsx") || name.endsWith(".js")) return FileCode;
-  if (name.endsWith(".css")) return Hash;
-  if (name.endsWith(".json")) return FileJson;
-  return File;
-};
-const getFileIconColor = (name) => {
-  if (name.endsWith(".jsx") || name.endsWith(".js")) return "text-yellow-400";
-  if (name.endsWith(".css")) return "text-blue-400";
-  if (name.endsWith(".json")) return "text-orange-400";
-  return "text-gray-400";
-};
