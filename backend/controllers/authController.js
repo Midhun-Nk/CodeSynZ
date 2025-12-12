@@ -15,34 +15,7 @@ function createToken(user) {
   );
 }
 
-// REGISTER
-// export const register = async (req, res) => {
-//   try {
-//     const { username, email, password } = req.body;
-
-//     const existing = await User.findOne({ email });
-//     if (existing)
-//       return res.status(400).json({ message: "Email already exists" });
-
-//     const hashed = await bcrypt.hash(password, 10);
-
-//     const newUser = await User.create({
-//       username,
-//       email,
-//       password: hashed,
-//       authProvider: "local",
-//     });
-
-//     return res.json({
-//       message: "Account created",
-//       userId: newUser._id,
-//     });
-
-//   } catch (err) {
-//     return res.status(500).json({ error: err.message });
-//   }
-// };
-
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 // LOGIN
 export const login = async (req, res) => {
   try {
@@ -83,21 +56,21 @@ export const login = async (req, res) => {
 // GOOGLE SUCCESS
 export const googleSuccess = async (req, res) => {
   if (!req.user)
-    return res.redirect("http://localhost:5173/login?error=no_user");
+    return res.redirect(`${FRONTEND_URL}/login?error=no_user`);
 
   const token = createToken(req.user);
 
-  return res.redirect(`http://localhost:5173/oauth-success?token=${token}`);
+  return res.redirect(`${FRONTEND_URL}/oauth-success?token=${token}`);
 };
 
 // GITHUB SUCCESS
 export const githubSuccess = async (req, res) => {
   if (!req.user)
-    return res.redirect("http://localhost:5173/login?error=no_user");
+    return res.redirect(`${FRONTEND_URL}/login?error=no_user`);
 
   const token = createToken(req.user);
 
-  return res.redirect(`http://localhost:5173/oauth-success?token=${token}`);
+  return res.redirect(`${FRONTEND_URL}/oauth-success?token=${token}`);
 };
 
 // GET CURRENT USER
